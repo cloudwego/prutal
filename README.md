@@ -6,13 +6,14 @@ Prutal aims to minimize code generation as much as possible while ensuring seria
 
 **Since Prutal is NOT yet ready for production use, we are not providing usage documentation at this time, nor do we guarantee backward compatibility of the interface.**
 
-## Features
+## Feature Comparison
 
 | Features | Prutal | Protobuf |
 | -- | -- | -- |
 | Supported Languages | Go | C++, Java, Python, Go, and more |
 | Code Generation | ✅ | ✅ |
-| Serialization | ✅ without generating code | ✅ |
+| Generated Code Size | 😄 compact | 😡 bulky |
+| Serialization | ✅ | ✅ |
 | Performance | ⭐️⭐️⭐️⭐️⭐️ | ⭐️⭐️⭐️ |
 | Extensibility | 😄 Package | 😡 Plugin |
 | Compatibility | ✅  (see Protobuf Compatibility) | ✅ |
