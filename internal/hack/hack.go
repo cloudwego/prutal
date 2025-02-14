@@ -48,11 +48,19 @@ func PanicIfHackErr() {
 // this func should be called once to test compatibility with Go runtime
 func testhack() error {
 	{ // MapIter
-		m := map[int]string{7: "hello"}
+
+		m := map[int]string{7: "hello", 8: "world"}
 		rv := reflect.ValueOf(m)
 		it := NewMapIter(rv)
-		kp, vp := it.Next()
-		if *(*int)(kp) != 7 || *(*string)(vp) != "hello" {
+		m0 := map[int]string{}
+		for {
+			kp, vp := it.Next()
+			if kp == nil {
+				break
+			}
+			m0[*(*int)(kp)] = *(*string)(vp)
+		}
+		if !reflect.DeepEqual(m, m0) {
 			return errors.New("compatibility issue found: MapIter")
 		}
 	}
@@ -163,14 +171,10 @@ func NewMapIter(rv reflect.Value) MapIter {
 }
 
 func (m *MapIter) Next() (unsafe.Pointer, unsafe.Pointer) {
-	p := (*hackMapIter)(unsafe.Pointer(&m.MapIter))
-	if p.hitter.k != nil {
-		mapiternext(unsafe.Pointer(&p.hitter))
-		return p.hitter.k, p.hitter.v
-	}
 	// use reflect.Next to initialize hitter
-	// then we no need to bind mapiterinit
+	// then we no need to bind mapiterinit, mapiternext
 	m.MapIter.Next()
+	p := (*hackMapIter)(unsafe.Pointer(&m.MapIter))
 	return p.hitter.k, p.hitter.v
 }
 
@@ -273,10 +277,3 @@ type SliceHeader struct {
 	Len  int
 	Cap  int
 }
-
-//go:linkname mallocgc runtime.mallocgc
-func mallocgc(size uintptr, typ unsafe.Pointer, needzero bool) unsafe.Pointer
-
-//go:noescape
-//go:linkname mapiternext runtime.mapiternext
-func mapiternext(it unsafe.Pointer)
