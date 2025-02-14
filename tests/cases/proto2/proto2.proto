@@ -1,0 +1,111 @@
+syntax = "proto2";
+
+package test_proto2;
+
+option go_package = "./proto2";
+
+
+message Message {
+  enum NestedEnum {
+    ZERO = 0;
+    ONE = 1;
+    TWO = 2;
+  }
+
+  message NestedMessage {
+    optional int32 i32 = 1;
+    optional Message M = 2;
+  }
+
+    // Singular - optional
+  optional int32 optional_int32 = 1;
+  optional int64 optional_int64 = 2;
+  optional uint32 optional_uint32 = 3;
+  optional uint64 optional_uint64 = 4;
+  optional sint32 optional_sint32 = 5;
+  optional sint64 optional_sint64 = 6;
+  optional fixed32 optional_fixed32 = 7;
+  optional fixed64 optional_fixed64 = 8;
+  optional sfixed32 optional_sfixed32 = 9;
+  optional sfixed64 optional_sfixed64 = 10;
+  optional float optional_float = 11;
+  optional double optional_double = 12;
+  optional bool optional_bool = 13;
+  optional string optional_string = 14;
+  optional bytes optional_bytes = 15;
+  optional NestedEnum optional_enum = 16;
+
+    // Singular - required
+  required int32 required_int32 = 1001;
+  required int64 required_int64 = 1002;
+  required uint32 required_uint32 = 1003;
+  required uint64 required_uint64 = 1004;
+  required sint32 required_sint32 = 1005;
+  required sint64 required_sint64 = 1006;
+  required fixed32 required_fixed32 = 1007;
+  required fixed64 required_fixed64 = 1008;
+  required sfixed32 required_sfixed32 = 1009;
+  required sfixed64 required_sfixed64 = 1010;
+  required float required_float = 1011;
+  required double required_double = 1012;
+  required bool required_bool = 1013;
+  required string required_string = 1014;
+  required bytes required_bytes = 1015;
+  required NestedEnum required_enum = 1016;
+
+
+
+    // Repeated
+  repeated int32 repeated_int32 = 2001;
+  repeated int64 repeated_int64 = 2002;
+  repeated uint32 repeated_uint32 = 2003;
+  repeated uint64 repeated_uint64 = 2004;
+  repeated sint32 repeated_sint32 = 2005;
+  repeated sint64 repeated_sint64 = 2006;
+  repeated fixed32 repeated_fixed32 = 2007;
+  repeated fixed64 repeated_fixed64 = 2008;
+  repeated sfixed32 repeated_sfixed32 = 2009;
+  repeated sfixed64 repeated_sfixed64 = 2010;
+  repeated float repeated_float = 2011;
+  repeated double repeated_double = 2012;
+  repeated bool repeated_bool = 2013;
+  repeated string repeated_string = 2014;
+  repeated bytes repeated_bytes = 2015;
+  repeated NestedEnum repeated_enum = 2016;
+  repeated NestedMessage repeated_msg = 2017;
+
+  // Repeated - packed
+  repeated int32 packed_int32 = 3001 [packed = true];
+  repeated int64 packed_int64 = 3002 [packed = true];
+  repeated uint32 packed_uint32 = 3003 [packed = true];
+  repeated uint64 packed_uint64 = 3004 [packed = true];
+  repeated sint32 packed_sint32 = 3005 [packed = true];
+  repeated sint64 packed_sint64 = 3006 [packed = true];
+  repeated fixed32 packed_fixed32 = 3007 [packed = true];
+  repeated fixed64 packed_fixed64 = 3008 [packed = true];
+  repeated sfixed32 packed_sfixed32 = 3009 [packed = true];
+  repeated sfixed64 packed_sfixed64 = 3010 [packed = true];
+  repeated float packed_float = 3011 [packed = true];
+  repeated double packed_double = 3012 [packed = true];
+  repeated bool packed_bool = 3013 [packed = true];
+  repeated NestedEnum packed_enum = 3016 [packed = true];
+
+
+  // Map
+  map<int32, int32> map_int32_int32 = 4001;
+  map<int64, int64> map_int64_int64 = 4002;
+  map<uint32, uint32> map_uint32_uint32 = 4003;
+  map<uint64, uint64> map_uint64_uint64 = 4004;
+  map<sint32, sint32> map_sint32_sint32 = 4005;
+  map<sint64, sint64> map_sint64_sint64 = 4006;
+  map<fixed32, fixed32> map_fixed32_fixed32 = 4007;
+  map<fixed64, fixed64> map_fixed64_fixed64 = 4008;
+  map<sfixed32, sfixed32> map_sfixed32_sfixed32 = 4009;
+  map<sfixed64, sfixed64> map_sfixed64_sfixed64 = 4010;
+  map<int32, float> map_int32_float = 4011;
+  map<int32, double> map_int32_double = 4012;
+  map<bool, bool> map_bool_bool = 4013;
+  map<string, string> map_string_string = 4014;
+  map<string, bytes> map_string_bytes = 4015;
+  map<string, NestedMessage> map_string_nested_message = 4016;
+}
