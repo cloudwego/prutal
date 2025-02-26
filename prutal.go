@@ -20,12 +20,19 @@ import (
 	"github.com/cloudwego/prutal/internal/prutal"
 )
 
-// MarshalAppend ...
+// MarshalAppend appends the protobuf encoding of v to b and returns the new bytes
 func MarshalAppend(b []byte, v interface{}) ([]byte, error) {
 	return prutal.MarshalAppend(b, v)
 }
 
-// Unmarshal ...
+// Marshal is alias of MarshalAppend(nil, v).
+//
+// You should consider using MarshalAppend for performance concerns
+func Marshal(v interface{}) ([]byte, error) {
+	return prutal.MarshalAppend(nil, v)
+}
+
+// Unmarshal parses the protobuf-encoded data and stores the result in the value pointed to by v.
 func Unmarshal(b []byte, v interface{}) error {
 	return prutal.Unmarshal(b, v)
 }
