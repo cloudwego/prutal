@@ -114,11 +114,11 @@ func TestField(t *testing.T) {
 		Fields: []*EnumField{{Name: "Zero", GoName: "MyEnum_Zero"}},
 	}
 	f.Type = &Type{Name: "my_enum",
-		typ:      e,
-		GoImport: "base",
+		typ: e,
+		p:   &Proto{GoImport: "base"},
 	}
 	assert.Equal(t, "base.MyEnum_Zero", f.GoZero())
-	f.Type.GoImport = ""
+	f.Type.p = nil
 	assert.Equal(t, "MyEnum_Zero", f.GoZero())
 	e.Fields = nil
 	assert.Equal(t, "0", f.GoZero())

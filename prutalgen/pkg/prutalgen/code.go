@@ -336,9 +336,11 @@ func (g *GoCodeGen) FieldGen(f *Field, w *CodeWriter) {
 		w.F("%s", f.HeadComment)
 	}
 	w.F("%s %s `%s` %s", f.GoName, f.GoTypeName(), g.FieldStructTag(f), f.InlineComment)
-	w.UsePkg(f.Type.GoImport, "")
-	if f.Key != nil {
-		w.UsePkg(f.Key.GoImport, "")
+	if f.Type.IsExternalType() {
+		w.UsePkg(f.Type.GoImport(), "")
+	}
+	if f.Key != nil && f.Key.IsExternalType() {
+		w.UsePkg(f.Key.GoImport(), "")
 	}
 }
 

@@ -41,7 +41,7 @@ func TestType(t *testing.T) {
 
 	p.typ = e
 	assert.Equal(t, e.GoName, p.GoName())
-	p.GoImport = "prutal/base"
+	p.p = &Proto{GoImport: "prutal/base"}
 	assert.Equal(t, "base."+e.GoName, p.GoName())
 
 	// test EncodingType

@@ -193,10 +193,10 @@ func (f *Field) GoZero() string {
 				continue
 			}
 			zero := f.GoName
-			if tp.GoImport == "" {
+			if !tp.IsExternalType() {
 				return zero
 			}
-			return path.Base(tp.GoImport) + "." + zero
+			return path.Base(tp.GoImport()) + "." + zero
 		}
 		return "0"
 	}

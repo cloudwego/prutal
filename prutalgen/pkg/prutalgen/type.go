@@ -24,8 +24,9 @@ import (
 )
 
 type Type struct {
-	Name     string
-	GoImport string
+	Name string
+
+	p *Proto
 
 	// *Enum or *Message
 	typ any
@@ -55,10 +56,26 @@ func (t *Type) GoName() string {
 	default:
 		panic("[BUG] unknown type")
 	}
-	if len(t.GoImport) == 0 {
+	if t.p == nil {
 		return ret
 	}
-	return path.Base(t.GoImport) + "." + ret
+	return path.Base(t.p.GoImport) + "." + ret
+}
+
+func (t *Type) IsExternalType() bool {
+	return t.p != nil
+}
+
+func (t *Type) GoImport() string {
+	if t.p != nil {
+		return t.p.GoImport
+	}
+	if t.f != nil {
+		return t.f.Msg.Proto.GoImport
+	} else if t.m != nil {
+		return t.m.Service.Proto.GoImport
+	}
+	return ""
 }
 
 func (t *Type) String() string {
@@ -111,7 +128,7 @@ func (t *Type) resolve(allowScalar bool) {
 		p = t.m.Service.Proto
 	}
 
-	t.GoImport = ""
+	t.p = nil
 	t.typ = nil
 
 	if allowScalar {
@@ -175,7 +192,7 @@ func (t *Type) resolve(allowScalar bool) {
 		t.typ = x.getType(t.Name)
 		if t.typ != nil {
 			if x.GoImport != p.GoImport {
-				t.GoImport = x.GoImport
+				t.p = x
 			}
 			return
 		}
