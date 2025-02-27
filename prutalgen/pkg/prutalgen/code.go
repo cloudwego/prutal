@@ -26,11 +26,19 @@ import (
 	"strings"
 )
 
+type MarshalerType int
+
+const (
+	MarshalerKitexProtobuf = 1 << iota
+)
+
 type GoCodeGen struct {
 	Format bool
 
 	// Generates GetXXX funcs
 	Getter bool
+
+	Marshaler MarshalerType
 }
 
 func NewGoCodeGen() *GoCodeGen {
@@ -205,6 +213,12 @@ func (g *GoCodeGen) MessageGen(m *Message, w *CodeWriter) {
 
 	// func Reset
 	w.F("\nfunc (x *%s) Reset() { *x = %s{} }", m.GoName, m.GoName)
+
+	if g.Marshaler&MarshalerKitexProtobuf != 0 {
+		w.UsePkg("github.com/cloudwego/prutal", "")
+		w.F("\nfunc (x *%s) Marshal(in []byte) ([]byte, error) { return prutal.MarshalAppend(in, x) }", m.GoName)
+		w.F("\nfunc (x *%s) Unmarshal(in []byte) error { return prutal.Unmarshal(in, x) }", m.GoName)
+	}
 
 	for k := range generatedOneOfField {
 		delete(generatedOneOfField, k)

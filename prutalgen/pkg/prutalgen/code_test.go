@@ -17,6 +17,7 @@
 package prutalgen
 
 import (
+	"go/format"
 	"os"
 	"path/filepath"
 	"strings"
@@ -28,14 +29,16 @@ import (
 func TestGenCode(t *testing.T) {
 	g := NewGoCodeGen()
 	g.Getter = true
+	g.Marshaler = MarshalerKitexProtobuf
 	p := &Proto{ProtoFile: filepath.Join(t.TempDir(), "test.proto"), l: testLogger{t}}
 	p.GoPackage = "test"
 
 	p.Enums = []*Enum{{
 		GoName: "Enum1",
+		Name:   "enum1",
 		Fields: []*EnumField{
-			{GoName: "Enum1_Zero", Value: 0},
-			{GoName: "Enum1_N", Value: 10001},
+			{GoName: "Enum1_Zero", Name: "enum1_zero", Value: 0},
+			{GoName: "Enum1_N", Name: "enum1_n", Value: 10001},
 		},
 		Proto: p,
 	}}
@@ -70,9 +73,10 @@ func TestGenCode(t *testing.T) {
 
 	m.Enums = []*Enum{{
 		GoName: "NestedEnum",
+		Name:   "nested_enum",
 		Fields: []*EnumField{
-			{GoName: "NestedEnum_Zero", Value: 0},
-			{GoName: "NestedEnum_N", Value: 30001},
+			{GoName: "NestedEnum_Zero", Name: "nested_enum_zero", Value: 0},
+			{GoName: "NestedEnum_N", Name: "nested_enum_n", Value: 30001},
 		},
 		Proto: p,
 	}}
@@ -106,6 +110,9 @@ func TestGenCode(t *testing.T) {
 		t.Fatal("not match", s)
 	}
 	t.Log(src)
+	_, err = format.Source(b)
+	assert.NoError(t, err)
+
 	assertLine("Enum1 = 0")
 	assertLine("Enum1 = 10001")
 	assertLine("NestedEnum = 0")
@@ -117,4 +124,6 @@ func TestGenCode(t *testing.T) {
 	assertLine("OneofA string")
 	assertLine("OneofB string")
 	assertLine("NField1 string")
+	assertLine("prutal.MarshalAppend")
+	assertLine("prutal.Unmarshal")
 }
