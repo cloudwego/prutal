@@ -137,7 +137,7 @@ type FieldDesc struct {
 	// only for scalar types (including packed scalar types)
 	AppendFunc func(b []byte, p unsafe.Pointer) []byte
 
-	// only for repeated scalar types
+	// only for list or map scalar types
 	AppendRepeated func(b []byte, id int32, p unsafe.Pointer) []byte
 
 	// only for map type
@@ -199,7 +199,7 @@ func (f *FieldDesc) parse(sf reflect.StructField) (err error) {
 		f.ValAppendFunc = getAppendFunc(f.ValType, t.V.RealKind(), false)
 	}
 	if f.IsList {
-		f.AppendRepeated = getAppendRepeatedFunc(f.TagType, t.RealKind())
+		f.AppendRepeated = getAppendListFunc(f.TagType, t.RealKind())
 	}
 	return
 }
@@ -561,31 +561,31 @@ func getAppendFunc(t TagType, k reflect.Kind, packed bool) func(b []byte, p unsa
 	return nil
 }
 
-func getAppendRepeatedFunc(t TagType, k reflect.Kind) func(b []byte, id int32, p unsafe.Pointer) []byte {
+func getAppendListFunc(t TagType, k reflect.Kind) func(b []byte, id int32, p unsafe.Pointer) []byte {
 	switch t {
 	case TypeVarint:
 		switch k {
 		case reflect.Int64, reflect.Uint64:
-			return wire.UnsafeAppendRepeatedVarintU64
+			return wire.UnsafeAppendVarintU64List
 		case reflect.Int32, reflect.Uint32:
-			return wire.UnsafeAppendRepeatedVarintU32
+			return wire.UnsafeAppendVarintU32List
 		case reflect.Bool:
-			return wire.UnsafeAppendRepeatedBool
+			return wire.UnsafeAppendBoolList
 		}
 	case TypeZigZag32:
-		return wire.UnsafeAppendRepeatedZigZag32
+		return wire.UnsafeAppendZigZag32List
 	case TypeZigZag64:
-		return wire.UnsafeAppendRepeatedZigZag64
+		return wire.UnsafeAppendZigZag64List
 	case TypeFixed32:
-		return wire.UnsafeAppendRepeatedFixed32
+		return wire.UnsafeAppendFixed32List
 	case TypeFixed64:
-		return wire.UnsafeAppendRepeatedFixed64
+		return wire.UnsafeAppendFixed64List
 	case TypeBytes:
 		switch k {
 		case reflect.String: // string
-			return wire.UnsafeAppendRepeatedString
+			return wire.UnsafeAppendStringList
 		case KindBytes: // []byte
-			return wire.UnsafeAppendRepeatedBytes
+			return wire.UnsafeAppendBytesList
 		}
 	}
 	return nil

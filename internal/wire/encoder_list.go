@@ -18,7 +18,7 @@ package wire
 
 import "unsafe"
 
-func UnsafeAppendRepeatedVarintU64(b []byte, id int32, p unsafe.Pointer) []byte {
+func UnsafeAppendVarintU64List(b []byte, id int32, p unsafe.Pointer) []byte {
 	for _, v := range *(*[]uint64)(p) {
 		b = AppendVarint(b, EncodeTag(id, TypeVarint))
 		for v >= 0x80 {
@@ -30,7 +30,7 @@ func UnsafeAppendRepeatedVarintU64(b []byte, id int32, p unsafe.Pointer) []byte 
 	return b
 }
 
-func UnsafeAppendRepeatedVarintU32(b []byte, id int32, p unsafe.Pointer) []byte {
+func UnsafeAppendVarintU32List(b []byte, id int32, p unsafe.Pointer) []byte {
 	for _, v := range *(*[]uint32)(p) {
 		b = AppendVarint(b, EncodeTag(id, TypeVarint))
 		for v >= 0x80 {
@@ -42,8 +42,8 @@ func UnsafeAppendRepeatedVarintU32(b []byte, id int32, p unsafe.Pointer) []byte 
 	return b
 }
 
-func UnsafeAppendRepeatedZigZag64(b []byte, id int32, p unsafe.Pointer) []byte {
-	for _, x := range *(*[]uint64)(p) {
+func UnsafeAppendZigZag64List(b []byte, id int32, p unsafe.Pointer) []byte {
+	for _, x := range *(*[]int64)(p) {
 		b = AppendVarint(b, EncodeTag(id, TypeVarint))
 		v := uint64(x<<1) ^ uint64(x>>63)
 		for v >= 0x80 {
@@ -55,8 +55,8 @@ func UnsafeAppendRepeatedZigZag64(b []byte, id int32, p unsafe.Pointer) []byte {
 	return b
 }
 
-func UnsafeAppendRepeatedZigZag32(b []byte, id int32, p unsafe.Pointer) []byte {
-	for _, x := range *(*[]uint32)(p) {
+func UnsafeAppendZigZag32List(b []byte, id int32, p unsafe.Pointer) []byte {
+	for _, x := range *(*[]int32)(p) {
 		b = AppendVarint(b, EncodeTag(id, TypeVarint))
 		v := uint32(x<<1) ^ uint32(x>>31)
 		for v >= 0x80 {
@@ -68,7 +68,7 @@ func UnsafeAppendRepeatedZigZag32(b []byte, id int32, p unsafe.Pointer) []byte {
 	return b
 }
 
-func UnsafeAppendRepeatedFixed64(b []byte, id int32, p unsafe.Pointer) []byte {
+func UnsafeAppendFixed64List(b []byte, id int32, p unsafe.Pointer) []byte {
 	for _, v := range *(*[]uint64)(p) {
 		b = AppendVarint(b, EncodeTag(id, TypeFixed64))
 		b = append(b, byte(v>>0),
@@ -83,7 +83,7 @@ func UnsafeAppendRepeatedFixed64(b []byte, id int32, p unsafe.Pointer) []byte {
 	return b
 }
 
-func UnsafeAppendRepeatedFixed32(b []byte, id int32, p unsafe.Pointer) []byte {
+func UnsafeAppendFixed32List(b []byte, id int32, p unsafe.Pointer) []byte {
 	for _, v := range *(*[]uint32)(p) {
 		b = AppendVarint(b, EncodeTag(id, TypeFixed32))
 		b = append(b, byte(v>>0),
@@ -94,7 +94,7 @@ func UnsafeAppendRepeatedFixed32(b []byte, id int32, p unsafe.Pointer) []byte {
 	return b
 }
 
-func UnsafeAppendRepeatedBool(b []byte, id int32, p unsafe.Pointer) []byte {
+func UnsafeAppendBoolList(b []byte, id int32, p unsafe.Pointer) []byte {
 	for _, v := range *(*[]byte)(p) {
 		b = AppendVarint(b, EncodeTag(id, TypeVarint))
 		b = append(b, v)
@@ -102,7 +102,7 @@ func UnsafeAppendRepeatedBool(b []byte, id int32, p unsafe.Pointer) []byte {
 	return b
 }
 
-func UnsafeAppendRepeatedString(b []byte, id int32, p unsafe.Pointer) []byte {
+func UnsafeAppendStringList(b []byte, id int32, p unsafe.Pointer) []byte {
 	for _, v := range *(*[]string)(p) {
 		b = AppendVarint(b, EncodeTag(id, TypeBytes))
 		b = AppendVarint(b, uint64(len(v)))
@@ -111,7 +111,7 @@ func UnsafeAppendRepeatedString(b []byte, id int32, p unsafe.Pointer) []byte {
 	return b
 }
 
-func UnsafeAppendRepeatedBytes(b []byte, id int32, p unsafe.Pointer) []byte {
+func UnsafeAppendBytesList(b []byte, id int32, p unsafe.Pointer) []byte {
 	for _, v := range *(*[][]byte)(p) {
 		b = AppendVarint(b, EncodeTag(id, TypeBytes))
 		b = AppendVarint(b, uint64(len(v)))
