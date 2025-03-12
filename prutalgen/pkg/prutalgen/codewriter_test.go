@@ -19,8 +19,6 @@ package prutalgen
 import (
 	"go/format"
 	"testing"
-
-	"github.com/cloudwego/prutal/internal/testutils/assert"
 )
 
 func sourceEqual(t *testing.T, a, b []byte) {
@@ -31,23 +29,72 @@ func sourceEqual(t *testing.T, a, b []byte) {
 	if v, err := format.Source(b); err == nil {
 		b = v
 	}
-	assert.Equal(t, string(a), string(b))
+	s0, s1 := string(a), string(b)
+	if s0 != s1 {
+		t.Fatalf("source not equal"+
+			"\n===============\n"+
+			"%s"+
+			"\n===============\n"+
+			"%s"+
+			"\n===============\n", a, b)
+	}
 }
 
 func TestCodeWriter(t *testing.T) {
-	w := NewCodeWriter("", "main")
+	w := NewCodeWriter("// header", "main")
+	sourceEqual(t, []byte("// header\n\npackage main"), w.Bytes())
 	w.UsePkg("fmt", "")
 	w.UsePkg("time", "")
-	w.UsePkg("github.com/cloudwego/gopkg", "")
+	w.UsePkg("github.com/cloudwego/gopkg", "gopkg")
+	w.Write([]byte("// hello main\n"))
 	w.F("func main() {}")
 
-	sourceEqual(t, []byte(`
+	sourceEqual(t, []byte(`// header
+
 package main
+
 import (
 	"fmt"
 	"time"
 
 	"github.com/cloudwego/gopkg"
 )
-func main() {}`), w.Bytes())
+
+// hello main
+func main() {}
+`), w.Bytes())
+
+	w.Reset("", "main")
+	w.UsePkg("fmt", "")
+	sourceEqual(t, []byte(`package main`+"\n"+`import "fmt"`), w.Bytes())
+	w.UsePkg("time", "")
+	w.UsePkg("net/http", "")
+	sourceEqual(t, []byte(`package main
+
+import (
+	"fmt"
+	"net/http"
+	"time"
+)`), w.Bytes())
+
+	w.SetGroupingFunc(func(pkg string) int {
+		if pkg == "fmt" {
+			return 5
+		}
+		if pkg == "time" {
+			return 3
+		}
+		return 0
+	})
+
+	sourceEqual(t, []byte(`package main
+
+import (
+  "net/http"
+
+  "time"
+
+  "fmt"
+)`), w.Bytes())
+
 }
