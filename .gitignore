@@ -38,3 +38,7 @@ output/*
 # generated test files
 tests/bin
 tests/**/*.pb.go
+
+
+# tmp files
+.DS_Store

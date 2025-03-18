@@ -17,7 +17,7 @@ Prutal aims to minimize code generation as much as possible while ensuring seria
 | Performance | ⭐️⭐️⭐️⭐️⭐️ | ⭐️⭐️⭐️ |
 | Extensibility | 😄 Package | 😡 Plugin |
 | Compatibility | ✅  (see Protobuf Compatibility) | ✅ |
-| gRPC | 🚧 Coming soon | ✅ |
+| gRPC | ✅ | ✅ |
 | Non-Pointer Field | ✅  (aka gogoproto.nullable) | ❌ |
 
 
@@ -37,12 +37,27 @@ Prutal aims to minimize code generation as much as possible while ensuring seria
 * ✅ Unknown Fields
 * ⚠️  JSON support: JSON struct tag only
 * ⚠️  Code generation: Go only
-* ⚠️  Protocol buffers well-known types [link](https://protobuf.dev/reference/protobuf/google.protobuf/)
+* ⚠️  [Protocol buffers well-known types](https://protobuf.dev/reference/protobuf/google.protobuf/)
     - Prutal is able to generate code by reusing pkg [`google.golang.org/protobuf/type`](https://pkg.go.dev/google.golang.org/protobuf/types/known)
     - Features of type like `Any` would be limited.
-* ❌ Groups (proto2) [link](https://protobuf.dev/programming-guides/proto2/#groups)
-* ❌ Overriding default scalar values (proto2, edition2023) [link](https://protobuf.dev/programming-guides/proto2/#explicit-default)
+* ❌ [Groups (proto2)](https://protobuf.dev/programming-guides/proto2/#groups)
+* ❌ [Overriding default scalar values (proto2, edition2023)](https://protobuf.dev/programming-guides/proto2/#explicit-default)
 
+
+## How to use Prutal with gRPC
+
+### Use Prutal without `prutalgen`
+
+All you need is
+```go
+import (
+    _ "github.com/cloudwego/prutal/pkg/grpccodec"
+)
+```
+
+###  Use Prutal with `prutalgen`
+
+check [grpc test case](tests/cases/grpc) for a full example
 
 
 ## Contributing
