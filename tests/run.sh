@@ -37,11 +37,13 @@ if [[ ! -f "${PATH_BIN}/protoc" ]]; then
   echo -e "installing protoc ... ${GREEN}done${RESET}"
 fi
 
+echo "installing protoc-gen-go ..."
+go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+echo -e "installing protoc-gen-go ... ${GREEN}done${RESET}"
 
 echo "installing protoc-gen-go-grpc ..."
 go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
 echo -e "installing protoc-gen-go-grpc ... ${GREEN}done${RESET}"
-
 
 echo -ne "installed: ${GREEN}"
 which protoc 
