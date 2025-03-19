@@ -335,8 +335,9 @@ func parseType(rt reflect.Type) (ret *Type, err error) {
 		ret.Kind = KindBytes
 	}
 
-	if ret.Kind == reflect.Slice || ret.Kind == KindBytes || ret.Kind == reflect.String ||
-		ret.Kind == reflect.Map || ret.Kind == reflect.Struct {
+	switch ret.Kind {
+	case reflect.Ptr, reflect.Slice, KindBytes, reflect.String,
+		reflect.Map, reflect.Struct:
 		// for these types, we can't use span mem allocator
 		// coz then may contain pointer
 		ret.MallocAbiType = hack.ReflectTypePtr(ret.T)

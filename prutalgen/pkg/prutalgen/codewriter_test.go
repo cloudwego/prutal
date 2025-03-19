@@ -46,7 +46,7 @@ func TestCodeWriter(t *testing.T) {
 	w.UsePkg("fmt", "")
 	w.UsePkg("time", "")
 	w.UsePkg("github.com/cloudwego/gopkg", "gopkg")
-	w.Write([]byte("// hello main\n"))
+	_, _ = w.Write([]byte("// hello main\n"))
 	w.F("func main() {}")
 
 	sourceEqual(t, []byte(`// header

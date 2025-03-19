@@ -56,13 +56,6 @@ func Same(t TestingT, a, b any, msgs ...interface{}) {
 	}
 }
 
-func DeepEqual(t TestingT, a, b any, msgs ...interface{}) {
-	if !reflect.DeepEqual(a, b) {
-		t.Helper()
-		t.Fatalf("not equal: \n%#v\n != \n%#v\n ] %s", a, b, fmt.Sprint(msgs...))
-	}
-}
-
 func Equal[T comparable](t TestingT, a, b T, msgs ...interface{}) {
 	if a != b {
 		t.Helper()

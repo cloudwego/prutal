@@ -5,6 +5,7 @@
 *.so
 *.dylib
 *.zip
+*.bin
 prutalgen/prutalgen
 
 

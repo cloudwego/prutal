@@ -77,14 +77,6 @@ func TestEqual(t *testing.T) {
 	m.Reset()
 	Equal(m, 1, 2)
 	m.CheckFailed(t)
-
-	m.Reset()
-	DeepEqual(m, 1, 1)
-	m.CheckPassed(t)
-
-	m.Reset()
-	DeepEqual(m, 1, 2)
-	m.CheckFailed(t)
 }
 
 func TestSame(t *testing.T) {

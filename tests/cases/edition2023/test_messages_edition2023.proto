@@ -184,13 +184,6 @@ message TestAllTypesEdition2023 {
   // extensions
   extensions 120 to 200;
 
-  // groups
-  message GroupLikeType {
-    int32 group_int32 = 202;
-    uint32 group_uint32 = 203;
-  }
-  GroupLikeType groupliketype = 201;
-  GroupLikeType delimited_field = 202;
 }
 
 message ForeignMessageEdition2023 {
