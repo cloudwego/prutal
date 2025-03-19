@@ -70,14 +70,39 @@ func reflectEqual(a, b reflect.Value) error {
 			}
 		}
 
-	default:
-		if a.Equal(b) {
-			return nil
+	case reflect.Bool:
+		if a.Bool() != b.Bool() {
+			return newNotEqual(a, b)
 		}
-		return fmt.Errorf("%v != %v", a, b)
+
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		if a.Int() != b.Int() {
+			return newNotEqual(a, b)
+		}
+
+	case reflect.Uint, reflect.Uint8, reflect.Uint16,
+		reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		if a.Uint() != b.Uint() {
+			return newNotEqual(a, b)
+		}
+
+	case reflect.Float32, reflect.Float64:
+		if a.Float() != b.Float() {
+			return newNotEqual(a, b)
+		}
+
+	case reflect.String:
+		if a.String() != b.String() {
+			return newNotEqual(a, b)
+		}
+
 	}
 
 	return nil
+}
+
+func newNotEqual(a, b reflect.Value) error {
+	return fmt.Errorf("%v != %v", a, b)
 }
 
 func dereference(v reflect.Value) reflect.Value {

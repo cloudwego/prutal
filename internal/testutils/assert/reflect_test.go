@@ -13,6 +13,10 @@ func TestDeepEqual(t *testing.T) {
 
 		List []int
 		Map  map[int]int
+
+		B bool
+		U uint
+		F float32
 	}
 
 	type testcase struct {
