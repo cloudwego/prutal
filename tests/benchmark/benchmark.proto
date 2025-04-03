@@ -1,0 +1,121 @@
+syntax = "proto3";
+
+package benchmark;
+
+option go_package = "./benchmark";
+
+message ScalarTypeMessage {
+  int32 i32 = 1;
+  int64 i64 = 2;
+  uint32 u32 = 3;
+  uint64 u64 = 4;
+  sint32 s32 = 5;
+  sint64 s64 = 6;
+  fixed32 fx32 = 7;
+  fixed64 fx64 = 8;
+  sfixed32 sfx32 = 9;
+  sfixed64 sfx64= 10;
+  float float32 = 11;
+  double float64 = 12;
+  bool boolean = 13;
+}
+
+message ScalarSliceMessage {
+  repeated int32 i32 = 1;
+  repeated int64 i64 = 2;
+  repeated uint32 u32 = 3;
+  repeated uint64 u64 = 4;
+  repeated sint32 s32 = 5;
+  repeated sint64 s64 = 6;
+  repeated fixed32 fx32 = 7;
+  repeated fixed64 fx64 = 8;
+  repeated sfixed32 sfx32 = 9;
+  repeated sfixed64 sfx64= 10;
+  repeated float float32 = 11;
+  repeated double float64 = 12;
+  repeated bool boolean = 13;
+}
+
+message ScalarMapMessage {
+  map<int32,int32> map_i32_i32 = 1;
+  map<int64,int64> map_i64_i64 = 2;
+  map<uint32,uint32> map_u32_u32 = 3;
+  map<uint64,uint64> map_u64_u64 = 4;
+  map<sint32,sint32> map_s32_s32 = 5;
+  map<sint64,sint64> map_s64_s64 = 6;
+  map<fixed32,fixed32> map_fx32_fx32 = 7;
+  map<fixed64,fixed64> map_fx64_fx64 = 8;
+  map<sfixed32,sfixed32> map_sfx32_sfx32 = 9;
+  map<sfixed64,sfixed64> map_sfx64_sfx64 = 10;
+  map<int32,float> map_i32_f32 = 11;
+  map<int64,double> map_i64_f64 = 12;
+  map<bool,bool> map_bool_bool = 13;
+}
+
+message StringTypeMessage {
+  string a = 1;
+  string b = 2;
+  string c = 3;
+  string d = 4;
+  string e = 5;
+  string f = 6;
+  string g = 7;
+  string h = 8;
+  string i = 9;
+}
+
+
+message StringSliceMessage {
+  repeated string aa = 1;
+  repeated string bb = 2;
+  repeated string cc = 3;
+  repeated string dd = 4;
+  repeated string ee = 5;
+  repeated string ff = 6;
+  repeated string gg = 7;
+  repeated string hh = 8;
+  repeated string ii = 9;
+}
+
+message StringMapMessage {
+  map<string,string> aa = 1;
+  map<string,string> bb = 2;
+  map<string,string> cc = 3;
+  map<string,string> dd = 4;
+  map<string,string> ee = 5;
+  map<string,string> ff = 6;
+  map<string,string> gg = 7;
+  map<string,string> hh = 8;
+  map<string,string> ii = 9;
+}
+
+
+message NestedMessage {
+  string s = 1;
+  int64 i = 2;
+}
+
+
+message StructSliceMessage {
+  repeated NestedMessage mm1 = 1;
+  repeated NestedMessage mm2 = 2;
+  repeated NestedMessage mm3 = 3;
+  repeated NestedMessage mm4 = 4;
+  repeated NestedMessage mm5 = 5;
+  repeated NestedMessage mm6 = 6;
+  repeated NestedMessage mm7 = 7;
+  repeated NestedMessage mm8 = 8;
+  repeated NestedMessage mm9 = 9;
+}
+
+message StructMapMessage {
+  map<int64, NestedMessage> mm1 = 1;
+  map<int64, NestedMessage> mm2 = 2;
+  map<int64, NestedMessage> mm3 = 3;
+  map<int64, NestedMessage> mm4 = 4;
+  map<int64, NestedMessage> mm5 = 5;
+  map<int64, NestedMessage> mm6 = 6;
+  map<int64, NestedMessage> mm7 = 7;
+  map<int64, NestedMessage> mm8 = 8;
+  map<int64, NestedMessage> mm9 = 9;
+}
