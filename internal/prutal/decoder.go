@@ -281,66 +281,16 @@ func (d *Decoder) DecodeStruct(b []byte, base unsafe.Pointer, s *desc.StructDesc
 
 	DECODE_PACKED_SLICE:
 		{ // for scalar types except string, bytes
+			if f.DecodeFunc == nil {
+				panic(fmt.Sprintf("BUG? unknown packed field %q (#%d)", f.Name, f.ID))
+			}
 			packed, n := protowire.ConsumeBytes(b[i:])
 			if n < 0 {
 				return i, protowire.ParseError(n)
 			}
 			i += n
-
-			h := (*hack.SliceHeader)(p)
-			// only for initialization, may not accurate for varint, and may case allocing more mem than needed.
-			// but it's perfect for fixed32 / fixed64
-			sz := len(packed) / int(t.Size)
-			if tag != desc.TypeFixed32 &&
-				tag != desc.TypeFixed64 &&
-				sz < defaultMinMakeSliceCap {
-				sz = defaultMinMakeSliceCap
-			}
-			h.Len = 0 // x[:0]
-			d.ReallocSlice(h, t, sz)
-
-			j := 0
-			var u32 uint32
-			var u64 uint64
-			for j < len(packed) {
-				switch tag {
-				case desc.TypeFixed32:
-					u32, n = protowire.ConsumeFixed32(packed[j:])
-					u64 = uint64(u32) // so that we can unify the code to use u64
-				case desc.TypeFixed64:
-					u64, n = protowire.ConsumeFixed64(packed[j:])
-				default:
-					u64, n = protowire.ConsumeVarint(packed[j:])
-					if tag == desc.TypeZigZag32 || tag == desc.TypeZigZag64 {
-						u64 = uint64(protowire.DecodeZigZag(u64))
-					}
-				}
-				if n < 0 {
-					return i, protowire.ParseError(n)
-				}
-				j += n
-
-				if h.Len == h.Cap { // slow path
-					d.ReallocSlice(h, t, 2*h.Cap)
-				}
-				h.Len++
-				p = unsafe.Add(h.Data, uintptr(h.Len-1)*t.Size) // p = &d[len(d-1)]
-				switch t.Kind {
-				case reflect.Int32:
-					*(*int32)(p) = int32(u64)
-				case reflect.Uint32:
-					*(*uint32)(p) = uint32(u64)
-				case reflect.Int64:
-					*(*int64)(p) = int64(u64)
-				case reflect.Uint64:
-					*(*uint64)(p) = u64
-				case reflect.Float32:
-					*(*uint32)(p) = uint32(u64)
-				case reflect.Float64:
-					*(*uint64)(p) = u64
-				case reflect.Bool: // 1 for true, 0 for false
-					*(*byte)(p) = byte(u64 & 0x1)
-				}
+			if err := f.DecodeFunc(packed, p); err != nil {
+				return i, err
 			}
 		} // end of PACKED_SLICE_LOOP
 

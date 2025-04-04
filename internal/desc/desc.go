@@ -150,6 +150,9 @@ type FieldDesc struct {
 	KeyAppendFunc func(b []byte, p unsafe.Pointer) []byte
 	ValAppendFunc func(b []byte, p unsafe.Pointer) []byte
 
+	// only for packed type
+	DecodeFunc func(b []byte, p unsafe.Pointer) error
+
 	T *Type
 }
 
@@ -200,6 +203,9 @@ func (f *FieldDesc) parse(sf reflect.StructField) (err error) {
 	}
 	if f.IsList {
 		f.AppendRepeated = getAppendListFunc(f.TagType, t.RealKind())
+	}
+	if f.Packed {
+		f.DecodeFunc = getPackedDecodeFunc(f)
 	}
 	return
 }
@@ -503,6 +509,30 @@ func parseStruct(rt reflect.Type) (s *StructDesc, err error) {
 	}
 
 	return s, nil
+}
+
+func getPackedDecodeFunc(f *FieldDesc) func(b []byte, p unsafe.Pointer) error {
+	switch f.TagType {
+	case TypeFixed32:
+		return wire.DecodePackedFixed32
+	case TypeFixed64:
+		return wire.DecodePackedFixed64
+	case TypeZigZag32:
+		return wire.DecodePackedZigZag32
+	case TypeZigZag64:
+		return wire.DecodePackedZigZag64
+
+	default:
+		switch f.T.V.Size {
+		case 1: // []bool
+			return wire.DecodePackedBool
+		case 4: // []uint32
+			return wire.DecodePackedVarintU32
+		case 8: // []uint64
+			return wire.DecodePackedVarintU64
+		}
+	}
+	return nil
 }
 
 func getAppendFunc(t TagType, k reflect.Kind, packed bool) func(b []byte, p unsafe.Pointer) []byte {

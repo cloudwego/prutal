@@ -45,7 +45,7 @@ func TestUnsafeAppendVarintU32List(t *testing.T) {
 }
 
 func TestUnsafeAppendZigZag64List(t *testing.T) {
-	vv := []int64{-1, 0, 1}
+	vv := []int64{-1, 0, 1 << 22}
 	p := &Builder{}
 	b0 := p.AppendZigZagField(1, vv[0]).
 		AppendZigZagField(1, vv[1]).
@@ -55,7 +55,7 @@ func TestUnsafeAppendZigZag64List(t *testing.T) {
 }
 
 func TestUnsafeAppendZigZag32List(t *testing.T) {
-	vv := []int32{-1, 0, 1}
+	vv := []int32{-1, 0, 1 << 22}
 	p := &Builder{}
 	b0 := p.AppendZigZagField(1, int64(vv[0])).
 		AppendZigZagField(1, int64(vv[1])).

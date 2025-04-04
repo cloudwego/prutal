@@ -16,11 +16,27 @@
 
 package wire
 
+import "sync"
+
 // Builder implements a wire format builder for testing
 type Builder struct {
 	b []byte
+}
 
-	tmp []byte
+var poolBuilder = sync.Pool{
+	New: func() any {
+		return &Builder{}
+	},
+}
+
+func NewBuilder() *Builder {
+	p := poolBuilder.Get().(*Builder)
+	p.Reset()
+	return p
+}
+
+func (p *Builder) Free() {
+	poolBuilder.Put(p)
 }
 
 func (p *Builder) Reset() *Builder {
@@ -85,6 +101,48 @@ func (p *Builder) appendBytes(v []byte) *Builder {
 	return p
 }
 
+func (p *Builder) AppendVarintU64(vv ...uint64) *Builder {
+	for _, v := range vv {
+		p.appendVarint(v)
+	}
+	return p
+}
+
+func (p *Builder) AppendVarintU32(vv ...uint32) *Builder {
+	for _, v := range vv {
+		p.appendVarint(uint64(v))
+	}
+	return p
+}
+
+func (p *Builder) AppendZigZag32(vv ...int32) *Builder {
+	for _, v := range vv {
+		p.appendVarint(uint64(uint32(v<<1) ^ uint32(v>>63)))
+	}
+	return p
+}
+
+func (p *Builder) AppendZigZag64(vv ...int64) *Builder {
+	for _, v := range vv {
+		p.appendVarint(uint64(v<<1) ^ uint64(v>>63))
+	}
+	return p
+}
+
+func (p *Builder) AppendFixed64(vv ...uint64) *Builder {
+	for _, v := range vv {
+		p.appendFixed64(v)
+	}
+	return p
+}
+
+func (p *Builder) AppendFixed32(vv ...uint32) *Builder {
+	for _, v := range vv {
+		p.appendFixed32(v)
+	}
+	return p
+}
+
 func (p *Builder) AppendVarintField(num int, v uint64) *Builder {
 	return p.appendTag(num, TypeVarint).appendVarint(v)
 }
@@ -111,20 +169,21 @@ func (p *Builder) AppendBytesField(num int, v []byte) *Builder {
 
 func (p *Builder) AppendPackedVarintField(num int, vv ...uint64) *Builder {
 	p.appendTag(num, TypeBytes)
-	p.tmp = p.tmp[:0]
-	for _, v := range vv {
-		p.tmp = xappendVarint(p.tmp, v)
-	}
-	return p.appendBytes(p.tmp)
+	tmp := NewBuilder()
+	defer tmp.Free()
+
+	tmp.AppendVarintU64(vv...)
+	return p.appendBytes(tmp.b)
 }
 
 func (p *Builder) AppendPackedZigZagField(num int, vv ...int64) *Builder {
 	p.appendTag(num, TypeBytes)
-	p.tmp = p.tmp[:0]
-	for _, v := range vv {
-		p.tmp = xappendVarint(p.tmp, uint64(v<<1)^uint64(v>>63))
-	}
-	return p.appendBytes(p.tmp)
+
+	tmp := NewBuilder()
+	defer tmp.Free()
+
+	tmp.AppendZigZag64(vv...)
+	return p.appendBytes(tmp.b)
 }
 
 func (p *Builder) AppendPackedFixed32Field(num int, vv ...uint32) *Builder {

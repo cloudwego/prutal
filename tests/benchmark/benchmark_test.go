@@ -27,11 +27,17 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func runBenchmark(p proto.Message, b *testing.B) {
+type testmessage interface {
+	proto.Message
+
+	Reset()
+}
+
+func runBenchmark(p testmessage, b *testing.B) {
 	var err error
+	x := proto.MarshalOptions{}
 	buf := make([]byte, 0, 16<<10)
-	b.Run("protobuf", func(b *testing.B) {
-		x := proto.MarshalOptions{}
+	b.Run("encode-protobuf", func(b *testing.B) {
 		for range b.N {
 			buf, err = x.MarshalAppend(buf[:0], p)
 			if err != nil {
@@ -39,7 +45,7 @@ func runBenchmark(p proto.Message, b *testing.B) {
 			}
 		}
 	})
-	b.Run("prutal", func(b *testing.B) {
+	b.Run("encode-prutal", func(b *testing.B) {
 		for range b.N {
 			buf, err = prutal.MarshalAppend(buf[:0], p)
 			if err != nil {
@@ -48,6 +54,29 @@ func runBenchmark(p proto.Message, b *testing.B) {
 		}
 	})
 
+	buf, err = x.MarshalAppend(buf[:0], p)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	b.Run("decode-protobuf", func(b *testing.B) {
+		for range b.N {
+			p.Reset()
+			err = proto.Unmarshal(buf, p)
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+	b.Run("decode-prutal", func(b *testing.B) {
+		for range b.N {
+			p.Reset()
+			err = prutal.Unmarshal(buf, p)
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
 }
 
 func BenchmarkScalarType(b *testing.B) {
