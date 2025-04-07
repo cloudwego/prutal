@@ -23,6 +23,16 @@ import (
 	"github.com/cloudwego/prutal/internal/protowire"
 )
 
+func init() {
+	packedDecoderFuncs[CoderVarint32] = DecodePackedVarintU32
+	packedDecoderFuncs[CoderVarint64] = DecodePackedVarintU64
+	packedDecoderFuncs[CoderZigZag32] = DecodePackedZigZag32
+	packedDecoderFuncs[CoderZigZag64] = DecodePackedZigZag64
+	packedDecoderFuncs[CoderFixed32] = DecodePackedFixed32
+	packedDecoderFuncs[CoderFixed64] = DecodePackedFixed64
+	packedDecoderFuncs[CoderBool] = DecodePackedBool
+}
+
 func DecodePackedVarintU64(b []byte, h unsafe.Pointer) error {
 	sz := 0
 	for _, v := range b {

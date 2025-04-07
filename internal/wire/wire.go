@@ -37,7 +37,7 @@ func ConsumeKVTag(b []byte) (int32, Type) {
 	if len(b) > 0 && uint64(b[0]) < 0x80 {
 		return DecodeTag(uint64(b[0]))
 	}
-	return 0, 0
+	return -1, -1
 }
 
 // EncodeTag ...
@@ -51,3 +51,18 @@ func EncodeTag(num int32, t Type) uint64 {
 func DecodeTag(v uint64) (int32, Type) {
 	return int32(uint32(v >> 3)), Type(v & 0b111)
 }
+
+type CoderType int8
+
+const ( // used for coder func mapping
+	CoderVarint32 = 1 + iota
+	CoderVarint64
+	CoderZigZag32
+	CoderZigZag64
+	CoderFixed32
+	CoderFixed64
+	CoderBytes
+	CoderString
+	CoderBool
+	CoderUnknown
+)

@@ -14,22 +14,14 @@
  * limitations under the License.
  */
 
-package prutal
+package wire
 
-import (
-	"errors"
-	"fmt"
+import "fmt"
 
-	"github.com/cloudwego/prutal/internal/desc"
-	"github.com/cloudwego/prutal/internal/wire"
-)
+func newFieldNumErr(got, expect int32) error {
+	return fmt.Errorf("field num not match: got %d expect %d", got, expect)
+}
 
-const defaultRecursionMaxDepth = 1000
-
-var (
-	errMaxDepthExceeded = errors.New("max depth exceeded")
-)
-
-func newWireTypeNotMatch(t0 wire.Type, t1 desc.TagType) error {
-	return fmt.Errorf("wire type %s not match %s", t0, t1)
+func newTypeNotMatchErr(got, expect Type) error {
+	return fmt.Errorf("wire type not match: got %s expect %s", got, expect)
 }

@@ -18,6 +18,16 @@ package wire
 
 import "unsafe"
 
+func init() {
+	appendPackedFuncs[CoderVarint32] = UnsafeAppendPackedVarintU32
+	appendPackedFuncs[CoderVarint64] = UnsafeAppendPackedVarintU64
+	appendPackedFuncs[CoderZigZag32] = UnsafeAppendPackedZigZag32
+	appendPackedFuncs[CoderZigZag64] = UnsafeAppendPackedZigZag64
+	appendPackedFuncs[CoderFixed32] = UnsafeAppendPackedFixed32
+	appendPackedFuncs[CoderFixed64] = UnsafeAppendPackedFixed64
+	appendPackedFuncs[CoderBool] = UnsafeAppendPackedBool
+}
+
 func UnsafeAppendPackedVarintU64(b []byte, p unsafe.Pointer) []byte {
 	b = LenReserve(b)
 	sz0 := len(b)

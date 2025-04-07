@@ -14,22 +14,25 @@
  * limitations under the License.
  */
 
-package prutal
+package protowire
 
-import (
-	"errors"
-	"fmt"
+import "strconv"
 
-	"github.com/cloudwego/prutal/internal/desc"
-	"github.com/cloudwego/prutal/internal/wire"
-)
-
-const defaultRecursionMaxDepth = 1000
-
-var (
-	errMaxDepthExceeded = errors.New("max depth exceeded")
-)
-
-func newWireTypeNotMatch(t0 wire.Type, t1 desc.TagType) error {
-	return fmt.Errorf("wire type %s not match %s", t0, t1)
+func (t Type) String() string {
+	switch t {
+	case VarintType:
+		return "varint"
+	case Fixed32Type:
+		return "fixed32"
+	case Fixed64Type:
+		return "fixed64"
+	case BytesType:
+		return "bytes"
+	case StartGroupType:
+		return "sgroup"
+	case EndGroupType:
+		return "egroup"
+	default:
+		return "t-" + strconv.Itoa(int(t))
+	}
 }

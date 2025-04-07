@@ -38,8 +38,8 @@ func TestConsumeKVTag(t *testing.T) {
 	assert.Equal(t, TypeBytes, wt)
 
 	n, wt = ConsumeKVTag([]byte{})
-	assert.Equal(t, int32(0), n)
-	assert.Equal(t, Type(0), wt)
+	assert.Equal(t, int32(-1), n)
+	assert.Equal(t, Type(-1), wt)
 }
 
 var (

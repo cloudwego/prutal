@@ -150,7 +150,7 @@ type FieldDesc struct {
 	KeyAppendFunc func(b []byte, p unsafe.Pointer) []byte
 	ValAppendFunc func(b []byte, p unsafe.Pointer) []byte
 
-	// only for packed type
+	// only for packed types, and some map types
 	DecodeFunc func(b []byte, p unsafe.Pointer) error
 
 	T *Type
@@ -204,9 +204,7 @@ func (f *FieldDesc) parse(sf reflect.StructField) (err error) {
 	if f.IsList {
 		f.AppendRepeated = getAppendListFunc(f.TagType, t.RealKind())
 	}
-	if f.Packed {
-		f.DecodeFunc = getPackedDecodeFunc(f)
-	}
+	f.DecodeFunc = getDecodeFunc(f)
 	return
 }
 
@@ -509,115 +507,4 @@ func parseStruct(rt reflect.Type) (s *StructDesc, err error) {
 	}
 
 	return s, nil
-}
-
-func getPackedDecodeFunc(f *FieldDesc) func(b []byte, p unsafe.Pointer) error {
-	switch f.TagType {
-	case TypeFixed32:
-		return wire.DecodePackedFixed32
-	case TypeFixed64:
-		return wire.DecodePackedFixed64
-	case TypeZigZag32:
-		return wire.DecodePackedZigZag32
-	case TypeZigZag64:
-		return wire.DecodePackedZigZag64
-
-	default:
-		switch f.T.V.Size {
-		case 1: // []bool
-			return wire.DecodePackedBool
-		case 4: // []uint32
-			return wire.DecodePackedVarintU32
-		case 8: // []uint64
-			return wire.DecodePackedVarintU64
-		}
-	}
-	return nil
-}
-
-func getAppendFunc(t TagType, k reflect.Kind, packed bool) func(b []byte, p unsafe.Pointer) []byte {
-	if packed {
-		switch t {
-		case TypeVarint:
-			switch k {
-			case reflect.Int32, reflect.Uint32:
-				return wire.UnsafeAppendPackedVarintU32
-			case reflect.Int64, reflect.Uint64:
-				return wire.UnsafeAppendPackedVarintU64
-			case reflect.Bool:
-				return wire.UnsafeAppendPackedBool
-			}
-		case TypeZigZag32:
-			return wire.UnsafeAppendPackedZigZag32
-		case TypeZigZag64:
-			return wire.UnsafeAppendPackedZigZag64
-		case TypeFixed32:
-			return wire.UnsafeAppendPackedFixed32
-		case TypeFixed64:
-			return wire.UnsafeAppendPackedFixed64
-		case TypeBytes:
-			panic("packed on bytes field")
-		default:
-			panic(fmt.Sprintf("unknown tag type: %q", t))
-		}
-	}
-	switch t {
-	case TypeVarint:
-		switch k {
-		case reflect.Int32, reflect.Uint32:
-			return wire.UnsafeAppendVarintU32
-		case reflect.Int64, reflect.Uint64:
-			return wire.UnsafeAppendVarintU64
-		case reflect.Bool:
-			return wire.UnsafeAppendBool
-		}
-	case TypeZigZag32:
-		return wire.UnsafeAppendZigZag32
-	case TypeZigZag64:
-		return wire.UnsafeAppendZigZag64
-	case TypeFixed32:
-		return wire.UnsafeAppendFixed32
-	case TypeFixed64:
-		return wire.UnsafeAppendFixed64
-	case TypeBytes:
-		switch k {
-		case reflect.String: // string
-			return wire.UnsafeAppendString
-		case KindBytes: // []byte
-			return wire.UnsafeAppendBytes
-		}
-	default:
-		panic(fmt.Sprintf("unknown tag type: %q", t))
-	}
-	return nil
-}
-
-func getAppendListFunc(t TagType, k reflect.Kind) func(b []byte, id int32, p unsafe.Pointer) []byte {
-	switch t {
-	case TypeVarint:
-		switch k {
-		case reflect.Int64, reflect.Uint64:
-			return wire.UnsafeAppendVarintU64List
-		case reflect.Int32, reflect.Uint32:
-			return wire.UnsafeAppendVarintU32List
-		case reflect.Bool:
-			return wire.UnsafeAppendBoolList
-		}
-	case TypeZigZag32:
-		return wire.UnsafeAppendZigZag32List
-	case TypeZigZag64:
-		return wire.UnsafeAppendZigZag64List
-	case TypeFixed32:
-		return wire.UnsafeAppendFixed32List
-	case TypeFixed64:
-		return wire.UnsafeAppendFixed64List
-	case TypeBytes:
-		switch k {
-		case reflect.String: // string
-			return wire.UnsafeAppendStringList
-		case KindBytes: // []byte
-			return wire.UnsafeAppendBytesList
-		}
-	}
-	return nil
 }

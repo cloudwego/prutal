@@ -24,11 +24,13 @@ import (
 	"github.com/cloudwego/prutal/internal/hack"
 )
 
+var errNotPointer = errors.New("input not pointer type")
+
 func MarshalAppend(b []byte, v interface{}) ([]byte, error) {
 	hack.PanicIfHackErr()
 	rv := reflect.ValueOf(v)
 	if rv.Kind() != reflect.Pointer {
-		return nil, errors.New("input not pointer type")
+		return nil, errNotPointer
 	}
 	s := desc.CacheGet(rv)
 	if s == nil {
@@ -46,7 +48,7 @@ func Unmarshal(b []byte, v interface{}) error {
 	hack.PanicIfHackErr()
 	rv := reflect.ValueOf(v)
 	if rv.Kind() != reflect.Pointer {
-		return errors.New("input not pointer type")
+		return errNotPointer
 	}
 	desc, err := desc.GetOrParse(rv)
 	if err != nil {

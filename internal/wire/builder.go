@@ -117,7 +117,7 @@ func (p *Builder) AppendVarintU32(vv ...uint32) *Builder {
 
 func (p *Builder) AppendZigZag32(vv ...int32) *Builder {
 	for _, v := range vv {
-		p.appendVarint(uint64(uint32(v<<1) ^ uint32(v>>63)))
+		p.appendVarint(uint64(uint32(v<<1) ^ uint32(v>>31)))
 	}
 	return p
 }

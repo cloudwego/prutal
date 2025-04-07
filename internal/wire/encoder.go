@@ -22,6 +22,29 @@ import (
 	"github.com/cloudwego/prutal/internal/protowire"
 )
 
+type AppendFunc func(b []byte, p unsafe.Pointer) []byte
+
+var appendFuncs = map[CoderType]AppendFunc{
+	CoderVarint32: UnsafeAppendVarintU32,
+	CoderVarint64: UnsafeAppendVarintU64,
+	CoderZigZag32: UnsafeAppendZigZag32,
+	CoderZigZag64: UnsafeAppendZigZag64,
+	CoderFixed32:  UnsafeAppendFixed32,
+	CoderFixed64:  UnsafeAppendFixed64,
+	CoderString:   UnsafeAppendString,
+	CoderBytes:    UnsafeAppendBytes,
+	CoderBool:     UnsafeAppendBool,
+}
+
+var appendPackedFuncs = map[CoderType]AppendFunc{}
+
+func GetAppendFunc(t CoderType, packed bool) AppendFunc {
+	if packed {
+		return appendPackedFuncs[t]
+	}
+	return appendFuncs[t]
+}
+
 func AppendVarint(b []byte, v uint64) []byte {
 	for v >= 0x80 {
 		b = append(b, byte(v)|0x80)

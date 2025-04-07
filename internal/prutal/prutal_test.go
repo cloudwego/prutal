@@ -19,6 +19,7 @@ package prutal
 import (
 	"fmt"
 	"math"
+	"reflect"
 	"strconv"
 	"testing"
 
@@ -52,11 +53,12 @@ func runEncoderTest(t *testing.T, tc *testcase) bool {
 
 		b, err := MarshalAppend([]byte{}, tc.Struct())
 		assert.NoError(t, err)
+		expect := tc.Struct()
 
-		p := &TestStruct{}
+		p := reflect.New(reflect.TypeOf(expect).Elem()).Interface()
 		err = Unmarshal(b, p)
 		assert.NoError(t, err)
-		assert.DeepEqual(t, tc.Struct(), p)
+		assert.DeepEqual(t, expect, p)
 	})
 }
 
@@ -64,10 +66,14 @@ func runDecoderTest(t *testing.T, tc *testcase) bool {
 	t.Helper()
 	return t.Run(tc.Name+"#Decoder", func(t *testing.T) {
 		t.Helper()
-		p := &TestStruct{}
-		err := Unmarshal(tc.Bytes(), p)
+
+		b := tc.Bytes()
+		expect := tc.Struct()
+
+		p := reflect.New(reflect.TypeOf(expect).Elem()).Interface()
+		err := Unmarshal(b, p)
 		assert.NoError(t, err)
-		assert.DeepEqual(t, tc.Struct(), p)
+		assert.DeepEqual(t, expect, p)
 	})
 }
 
@@ -175,12 +181,12 @@ type TestStruct struct {
 	MapZigZag64 map[int64]int64   `protobuf:"bytes,707,rep" protobuf_key:"zigzag64,1,opt" protobuf_val:"zigzag64,2,opt"`
 
 	// for TestEncoderDecoderMapFixed
-	MapFixed32  map[uint32]uint32   `protobuf:"bytes,801,rep" protobuf_key:"fixed32,1,opt" protobuf_val:"fixed32,2,opt"`
-	MapFixed64  map[uint64]uint64   `protobuf:"bytes,802,rep" protobuf_key:"fixed64,1,opt" protobuf_val:"fixed64,2,opt"`
-	MapSfixed32 map[int32]int32     `protobuf:"bytes,803,rep" protobuf_key:"fixed32,1,opt" protobuf_val:"fixed32,2,opt"`
-	MapSfixed64 map[int64]int64     `protobuf:"bytes,804,rep" protobuf_key:"fixed64,1,opt" protobuf_val:"fixed64,2,opt"`
-	MapFloat    map[float32]float32 `protobuf:"bytes,805,rep" protobuf_key:"fixed32,1,opt" protobuf_val:"fixed32,2,opt"`
-	MapDouble   map[float64]float64 `protobuf:"bytes,806,rep" protobuf_key:"fixed64,1,opt" protobuf_val:"fixed64,2,opt"`
+	MapFixed32  map[uint32]uint32  `protobuf:"bytes,801,rep" protobuf_key:"fixed32,1,opt" protobuf_val:"fixed32,2,opt"`
+	MapFixed64  map[uint64]uint64  `protobuf:"bytes,802,rep" protobuf_key:"fixed64,1,opt" protobuf_val:"fixed64,2,opt"`
+	MapSfixed32 map[int32]int32    `protobuf:"bytes,803,rep" protobuf_key:"fixed32,1,opt" protobuf_val:"fixed32,2,opt"`
+	MapSfixed64 map[int64]int64    `protobuf:"bytes,804,rep" protobuf_key:"fixed64,1,opt" protobuf_val:"fixed64,2,opt"`
+	MapFloat    map[uint32]float32 `protobuf:"bytes,805,rep" protobuf_key:"fixed32,1,opt" protobuf_val:"fixed32,2,opt"`
+	MapDouble   map[uint64]float64 `protobuf:"bytes,806,rep" protobuf_key:"fixed64,1,opt" protobuf_val:"fixed64,2,opt"`
 
 	// for TestEncoderDecoderMapBytes
 	MapStringString map[string]string `protobuf:"bytes,901,rep" protobuf_key:"bytes,1,opt" protobuf_val:"bytes,2,opt"`
@@ -852,14 +858,14 @@ func TestEncoderDecoderMapFixed(t *testing.T) {
 			x.Reset()
 			for i := float32(0); i < 3; i++ {
 				x.AppendBytesField(805, tmpx.Reset().
-					AppendFixed32Field(1, math.Float32bits(100+i)).
+					AppendFixed32Field(1, 100+uint32(i)).
 					AppendFixed32Field(2, math.Float32bits(200+i)).Bytes())
 			}
 			return x.Bytes()
 		},
 		Struct: func() interface{} {
 			return &TestStruct{
-				MapFloat: map[float32]float32{
+				MapFloat: map[uint32]float32{
 					100: 200,
 					101: 201,
 					102: 202,
@@ -873,14 +879,14 @@ func TestEncoderDecoderMapFixed(t *testing.T) {
 			x.Reset()
 			for i := float64(0); i < 3; i++ {
 				x.AppendBytesField(806, tmpx.Reset().
-					AppendFixed64Field(1, math.Float64bits(100+i)).
+					AppendFixed64Field(1, 100+uint64(i)).
 					AppendFixed64Field(2, math.Float64bits(200+i)).Bytes())
 			}
 			return x.Bytes()
 		},
 		Struct: func() interface{} {
 			return &TestStruct{
-				MapDouble: map[float64]float64{
+				MapDouble: map[uint64]float64{
 					100: 200,
 					101: 201,
 					102: 202,

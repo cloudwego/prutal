@@ -19,7 +19,6 @@ package prutal
 import (
 	"fmt"
 	"reflect"
-	"runtime"
 	"sync"
 	"unsafe"
 
@@ -150,7 +149,19 @@ func (d *Decoder) DecodeStruct(b []byte, base unsafe.Pointer, s *desc.StructDesc
 		if f.Repeated && t.IsSlice {
 			t = t.V
 			if typ == wire.TypeBytes && f.Packed {
-				goto DECODE_PACKED_SLICE // packed repeated fields, only scalar types except string or bytes
+				// packed repeated fields, only scalar types except string or bytes
+				if f.DecodeFunc == nil {
+					panic(fmt.Sprintf("BUG? unknown packed field %q (#%d)", f.Name, f.ID))
+				}
+				packed, n := protowire.ConsumeBytes(b[i:])
+				if n < 0 {
+					return i, protowire.ParseError(n)
+				}
+				i += n
+				if err := f.DecodeFunc(packed, p); err != nil {
+					return i, err
+				}
+				continue
 			}
 			h := (*hack.SliceHeader)(p)
 			if h.Cap == 0 {
@@ -238,31 +249,33 @@ func (d *Decoder) DecodeStruct(b []byte, base unsafe.Pointer, s *desc.StructDesc
 			case desc.KindBytes:
 				if len(fb) > 0 {
 					data := d.Malloc(len(fb), 1, 0)
-					h := (*hack.SliceHeader)(p)
-					h.Data = data
-					h.Len = len(fb)
-					h.Cap = len(fb)
+					*(*[]byte)(p) = unsafe.Slice((*byte)(data), len(fb))
 					copy(*(*[]byte)(p), fb)
-					runtime.KeepAlive(data)
 				} else {
 					*(*[]byte)(p) = []byte{}
 				}
 			case reflect.String:
 				if len(fb) > 0 {
 					data := d.Malloc(len(fb), 1, 0)
+					copy(unsafe.Slice((*byte)(data), len(fb)), fb)
 					h := (*hack.StringHeader)(p)
 					h.Data = data
 					h.Len = len(fb)
-					copyb(data, fb)
 				} else {
 					*(*string)(p) = ""
 				}
 			case reflect.Map:
-				if tmv == nil {
-					tmv = f.T.MapTmpVarsPool.Get().(*desc.TmpMapVars)
-				}
-				if _, err := d.DecodeMapPair(fb, p, f, tmv, maxdepth-1); err != nil {
-					return i, err
+				if f.DecodeFunc != nil { // fast path for using docoders in wire pkg
+					if err := f.DecodeFunc(fb, p); err != nil {
+						return i, err
+					}
+				} else {
+					if tmv == nil {
+						tmv = f.T.MapTmpVarsPool.Get().(*desc.TmpMapVars)
+					}
+					if _, err := d.DecodeMapPair(fb, p, f, tmv, maxdepth-1); err != nil {
+						return i, err
+					}
 				}
 			case reflect.Struct:
 				if _, err := d.DecodeStruct(fb, p, t.S, maxdepth-1); err != nil {
@@ -276,23 +289,6 @@ func (d *Decoder) DecodeStruct(b []byte, base unsafe.Pointer, s *desc.StructDesc
 			// unknown wiretype
 			return i, newWireTypeNotMatch(typ, tag)
 		}
-
-		continue // skip decoding packed slice below
-
-	DECODE_PACKED_SLICE:
-		{ // for scalar types except string, bytes
-			if f.DecodeFunc == nil {
-				panic(fmt.Sprintf("BUG? unknown packed field %q (#%d)", f.Name, f.ID))
-			}
-			packed, n := protowire.ConsumeBytes(b[i:])
-			if n < 0 {
-				return i, protowire.ParseError(n)
-			}
-			i += n
-			if err := f.DecodeFunc(packed, p); err != nil {
-				return i, err
-			}
-		} // end of PACKED_SLICE_LOOP
 
 	} // end of decoding field loop
 
@@ -388,10 +384,10 @@ func (d *Decoder) DecodeMapKey(b []byte, p unsafe.Pointer, f *desc.FieldDesc) (i
 		i += n
 		if len(fb) > 0 {
 			data := d.Malloc(len(fb), 1, 0)
+			copy(unsafe.Slice((*byte)(data), len(fb)), fb)
 			h := (*hack.StringHeader)(p)
 			h.Data = data
 			h.Len = len(fb)
-			copyb(data, fb)
 		} else {
 			*(*string)(p) = ""
 		}
@@ -493,22 +489,18 @@ func (d *Decoder) DecodeMapValue(b []byte, p unsafe.Pointer, f *desc.FieldDesc, 
 		case desc.KindBytes:
 			if len(fb) > 0 {
 				data := d.Malloc(len(fb), 1, 0)
-				h := (*hack.SliceHeader)(p)
-				h.Data = data
-				h.Len = len(fb)
-				h.Cap = len(fb)
+				*(*[]byte)(p) = unsafe.Slice((*byte)(data), len(fb))
 				copy(*(*[]byte)(p), fb)
-				runtime.KeepAlive(data)
 			} else {
 				*(*[]byte)(p) = []byte{}
 			}
 		case reflect.String:
 			if len(fb) > 0 {
 				data := d.Malloc(len(fb), 1, 0)
+				copy(unsafe.Slice((*byte)(data), len(fb)), fb)
 				h := (*hack.StringHeader)(p)
 				h.Data = data
 				h.Len = len(fb)
-				copyb(data, fb)
 			} else {
 				*(*string)(p) = ""
 			}
@@ -573,26 +565,8 @@ func (d *Decoder) ReallocSlice(h *hack.SliceHeader, t *desc.Type, c int) {
 
 // copyn copies n bytes from src to dst addr.
 func copyn(dst, src unsafe.Pointer, n int) {
-	var b0, b1 []byte
-	h0 := (*hack.SliceHeader)(unsafe.Pointer(&b0))
-	h0.Data = dst
-	h0.Cap = n
-	h0.Len = n
-	h1 := (*hack.SliceHeader)(unsafe.Pointer(&b1))
-	h1.Data = src
-	h1.Cap = n
-	h1.Len = n
-	copy(b0, b1)
-	runtime.KeepAlive(dst)
-	runtime.KeepAlive(src)
-}
-
-func copyb(p unsafe.Pointer, src []byte) {
-	var dst []byte
-	h := (*hack.SliceHeader)(unsafe.Pointer(&dst))
-	h.Data = p
-	h.Len = len(src)
-	h.Cap = len(src)
-	copy(dst, src)
-	runtime.KeepAlive(p)
+	copy(
+		unsafe.Slice((*byte)(dst), n),
+		unsafe.Slice((*byte)(src), n),
+	)
 }

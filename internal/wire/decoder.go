@@ -14,22 +14,25 @@
  * limitations under the License.
  */
 
-package prutal
+package wire
 
-import (
-	"errors"
-	"fmt"
+import "unsafe"
 
-	"github.com/cloudwego/prutal/internal/desc"
-	"github.com/cloudwego/prutal/internal/wire"
-)
+type DecodeFunc func([]byte, unsafe.Pointer) error
 
-const defaultRecursionMaxDepth = 1000
+type MapDecoderFuncKey struct {
+	K, V CoderType
+}
 
 var (
-	errMaxDepthExceeded = errors.New("max depth exceeded")
+	mapDecoderFuncs    = map[MapDecoderFuncKey]DecodeFunc{}
+	packedDecoderFuncs = map[CoderType]DecodeFunc{}
 )
 
-func newWireTypeNotMatch(t0 wire.Type, t1 desc.TagType) error {
-	return fmt.Errorf("wire type %s not match %s", t0, t1)
+func GetPackedDecoderFunc(c CoderType) DecodeFunc {
+	return packedDecoderFuncs[c]
+}
+
+func GetMapDecoderFunc(k, v CoderType) DecodeFunc {
+	return mapDecoderFuncs[MapDecoderFuncKey{K: k, V: v}]
 }
