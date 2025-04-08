@@ -28,6 +28,8 @@ var appendListFuncs = map[CoderType]AppendListFunc{
 	CoderFixed32:  UnsafeAppendFixed32List,
 	CoderFixed64:  UnsafeAppendFixed64List,
 	CoderBool:     UnsafeAppendBoolList,
+	CoderBytes:    UnsafeAppendBytesList,
+	CoderString:   UnsafeAppendStringList,
 }
 
 func GetAppendListFunc(t CoderType) AppendListFunc {
