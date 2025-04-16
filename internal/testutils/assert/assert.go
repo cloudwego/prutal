@@ -63,6 +63,20 @@ func Equal[T comparable](t TestingT, a, b T, msgs ...interface{}) {
 	}
 }
 
+func Nil[T any](t TestingT, a *T, msgs ...interface{}) {
+	if a != nil {
+		t.Helper()
+		t.Fatalf("expected nil. %s", fmt.Sprint(msgs...))
+	}
+}
+
+func NotNil[T any](t TestingT, a *T, msgs ...interface{}) {
+	if a == nil {
+		t.Helper()
+		t.Fatalf("expected not nil. %s", fmt.Sprint(msgs...))
+	}
+}
+
 func BytesEqual(t TestingT, a, b []byte) {
 	if string(a) == string(b) {
 		return // fast path if equal

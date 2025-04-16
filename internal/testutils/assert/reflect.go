@@ -68,7 +68,7 @@ func reflectEqual(a, b reflect.Value) error {
 		}
 		for i := 0; i < a.Len(); i++ {
 			if err := reflectEqual(a.Index(i), b.Index(i)); err != nil {
-				return fmt.Errorf("elem[%d]: %w", i, err)
+				return fmt.Errorf("list elem[%d]: %w", i, err)
 			}
 		}
 
@@ -82,7 +82,7 @@ func reflectEqual(a, b reflect.Value) error {
 			v0 := iter.Value()
 			v1 := b.MapIndex(k)
 			if err := reflectEqual(v0, v1); err != nil {
-				return fmt.Errorf("elem[%v]: %w", k, err)
+				return fmt.Errorf("map elem[%v]: %w", k, err)
 			}
 		}
 

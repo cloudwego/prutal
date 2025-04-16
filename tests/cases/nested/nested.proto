@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+package nested;
+
+
+option go_package = "./nested";
+
+message TestMessageA {
+  TestMessageA nested_a = 1;
+  TestMessageB nested_b = 2;
+  repeated TestMessageA nested_list_a = 3;
+  repeated TestMessageB nested_list_b = 4;
+  map<int64, TestMessageA> nested_map_a = 5;
+  map<int64, TestMessageB> nested_map_b = 6;
+
+  int64 V = 10;
+}
+
+
+message TestMessageB {
+  TestMessageA nested_a = 11;
+  TestMessageB nested_b = 12;
+  repeated TestMessageA nested_list_a = 13;
+  repeated TestMessageB nested_list_b = 14;
+  map<int64, TestMessageA> nested_map_a = 15;
+  map<int64, TestMessageB> nested_map_b = 16;
+
+  int64 V = 20;
+}

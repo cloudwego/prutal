@@ -50,18 +50,18 @@ type TestMessage struct {
 	MapStringBytes  map[string][]byte         `protobuf:"bytes,212,rep" protobuf_key:"bytes,1,opt" protobuf_val:"bytes,2,opt"`
 	MapStringStruct map[string]*NestedMessage `protobuf:"bytes,213,rep" protobuf_key:"bytes,1,opt" protobuf_val:"bytes,2,opt"`
 
-	Nested *NestedMessage `protobuf:"bytes,301,opt"`
+	Nested1 *NestedMessage `protobuf:"bytes,301,opt"`
+	Nested2 *TestMessage   `protobuf:"bytes,302,opt"`
 }
 
 type NestedMessage struct {
-	V *TestMessage `protobuf:"bytes,2,opt"`
+	X *NestedMessage `protobuf:"bytes,1,opt"`
+	V *TestMessage   `protobuf:"bytes,2,opt"`
+	Y *NestedMessage `protobuf:"bytes,3,opt"`
 }
 
 func TestGetOrParse(t *testing.T) {
-	s, err := GetOrParse(reflect.ValueOf(&TestMessage{}))
-	assert.NoError(t, err)
-
-	expects := []struct {
+	type testcase struct {
 		ID       int32
 		Name     string
 		TagType  TagType
@@ -69,7 +69,34 @@ func TestGetOrParse(t *testing.T) {
 		RealKind reflect.Kind
 		KKind    reflect.Kind
 		VKind    reflect.Kind
-	}{
+	}
+
+	runTest := func(name string, s *StructDesc, cases []testcase) {
+		t.Helper()
+		for _, p := range cases {
+			t.Run(name+"_"+p.Name, func(t *testing.T) {
+				f := s.GetField(p.ID)
+				assert.Equal(t, p.ID, f.ID)
+				assert.Equal(t, p.Name, f.Name)
+				assert.Equal(t, p.TagType, f.TagType)
+				assert.Equal(t, p.Kind.String(), f.T.Kind.String())
+				assert.Equal(t, p.RealKind.String(), f.T.RealKind().String())
+				if p.Kind == reflect.Map {
+					assert.Equal(t, p.KKind.String(), f.T.K.Kind.String())
+					assert.Equal(t, p.VKind.String(), f.T.V.Kind.String())
+					assert.True(t, f.IsMap)
+				}
+				if p.Kind == reflect.Slice {
+					assert.True(t, f.IsList)
+				}
+			})
+		}
+	}
+
+	s, err := GetOrParse(reflect.ValueOf(&TestMessage{}))
+	assert.NoError(t, err)
+
+	expects := []testcase{
 		{
 			ID:       1,
 			Name:     "Ptr",
@@ -235,33 +262,91 @@ func TestGetOrParse(t *testing.T) {
 		},
 		{
 			ID:       301,
-			Name:     "Nested",
+			Name:     "Nested1",
+			TagType:  TypeBytes,
+			Kind:     reflect.Pointer,
+			RealKind: reflect.Struct,
+		},
+		{
+			ID:       302,
+			Name:     "Nested2",
 			TagType:  TypeBytes,
 			Kind:     reflect.Pointer,
 			RealKind: reflect.Struct,
 		},
 	}
 	t.Log(s)
-	for _, p := range expects {
-		t.Run(p.Name, func(t *testing.T) {
-			f := s.GetField(p.ID)
-			assert.Equal(t, p.ID, f.ID)
-			assert.Equal(t, p.Name, f.Name)
-			assert.Equal(t, p.TagType, f.TagType)
-			assert.Equal(t, p.Kind.String(), f.T.Kind.String())
-			assert.Equal(t, p.RealKind.String(), f.T.RealKind().String())
-			if p.Kind == reflect.Map {
-				assert.Equal(t, p.KKind.String(), f.T.K.Kind.String())
-				assert.Equal(t, p.VKind.String(), f.T.V.Kind.String())
-				assert.True(t, f.IsMap)
-			}
-			if p.Kind == reflect.Slice {
-				assert.True(t, f.IsList)
-			}
-		})
-	}
+	runTest("TestMessage", s, expects)
 
-	assert.Same(t, s, CacheGet(reflect.ValueOf(&TestMessage{})))
+	// NestedMessage
+	expects = []testcase{
+		{
+			ID:       1,
+			Name:     "X",
+			TagType:  TypeBytes,
+			Kind:     reflect.Pointer,
+			RealKind: reflect.Struct,
+		},
+		{
+			ID:       2,
+			Name:     "V",
+			TagType:  TypeBytes,
+			Kind:     reflect.Pointer,
+			RealKind: reflect.Struct,
+		},
+		{
+			ID:       3,
+			Name:     "Y",
+			TagType:  TypeBytes,
+			Kind:     reflect.Pointer,
+			RealKind: reflect.Struct,
+		},
+	}
+	s = s.GetField(301).T.V.S // NestedMessage desc
+	runTest("NestedMessage", s, expects)
+
+	f1 := s.GetField(1)
+	assert.Equal(t, f1.T.V.S, s)           // same *StructDesc
+	assert.Equal(t, f1.T, s.GetField(3).T) // same as Field 3
+
+	// same for GetOrParse
+	s0, err := GetOrParse(reflect.ValueOf(&NestedMessage{}))
+	assert.NoError(t, err)
+	assert.Equal(t, s, s0)
+
+	s1 := s.GetField(2).T.V.S // TestMessage field
+	s2, err := GetOrParse(reflect.ValueOf(&TestMessage{}))
+	assert.NoError(t, err)
+	assert.Equal(t, s1, s2)
+}
+
+type NestedMessageA struct {
+	NestedA     *NestedMessageA           `protobuf:"bytes,1,opt,name=nested_a" json:"nested_a,omitempty"`
+	NestedB     *NestedMessageB           `protobuf:"bytes,2,opt,name=nested_b" json:"nested_b,omitempty"`
+	NestedListA []*NestedMessageA         `protobuf:"bytes,3,rep,name=nested_list1" json:"nested_list_a,omitempty"`
+	NestedListB []*NestedMessageB         `protobuf:"bytes,4,rep,name=nested_list2" json:"nested_list_b,omitempty"`
+	NestedMapA  map[int64]*NestedMessageA `protobuf:"bytes,5,rep,name=nested_map1" json:"nested_map_a,omitempty" protobuf_key:"varint,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	NestedMapB  map[int64]*NestedMessageB `protobuf:"bytes,6,rep,name=nested_map2" json:"nested_map_b,omitempty" protobuf_key:"varint,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+}
+
+type NestedMessageB struct {
+	NestedA     *NestedMessageA           `protobuf:"bytes,11,opt,name=nested_a" json:"nested_a,omitempty"`
+	NestedB     *NestedMessageB           `protobuf:"bytes,12,opt,name=nested_b" json:"nested_b,omitempty"`
+	NestedListA []*NestedMessageA         `protobuf:"bytes,13,rep,name=nested_list_a" json:"nested_list_a,omitempty"`
+	NestedListB []*NestedMessageB         `protobuf:"bytes,14,rep,name=nested_list_b" json:"nested_list_b,omitempty"`
+	NestedMapA  map[int64]*NestedMessageA `protobuf:"bytes,15,rep,name=nested_map1" json:"nested_map_a,omitempty" protobuf_key:"varint,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	NestedMapB  map[int64]*NestedMessageB `protobuf:"bytes,16,rep,name=nested_map2" json:"nested_map_b,omitempty" protobuf_key:"varint,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+}
+
+func TestNested(t *testing.T) {
+	s, err := GetOrParse(reflect.ValueOf(&NestedMessageA{}))
+	assert.NoError(t, err)
+	assert.NotNil(t, s)
+
+	f2 := s.GetField(2)
+	sb := f2.T.V.S
+	f13 := sb.GetField(13)
+	t.Log(f13)
 }
 
 func TestMapTmpVarsPool(t *testing.T) {

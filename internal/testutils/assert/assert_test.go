@@ -67,6 +67,28 @@ func TestTrueFalse(t *testing.T) {
 	m.CheckFailed(t)
 }
 
+func TestNilNotNil(t *testing.T) {
+	m := &mockTestingT{}
+
+	m.Reset()
+	Nil(m, (*int)(nil))
+	m.CheckPassed(t)
+
+	m.Reset()
+	v := 1
+	ptr := &v
+	Nil(m, ptr)
+	m.CheckFailed(t)
+
+	m.Reset()
+	NotNil(m, ptr)
+	m.CheckPassed(t)
+
+	m.Reset()
+	NotNil(m, (*int)(nil))
+	m.CheckFailed(t)
+}
+
 func TestEqual(t *testing.T) {
 	m := &mockTestingT{}
 

@@ -64,8 +64,15 @@ func GetOrParse(rv reflect.Value) (*StructDesc, error) {
 		return ret, nil
 	}
 
-	s, err := parseStruct(rt)
+	t, err := parseType(rt)
 	if err != nil {
+		return nil, err
+	}
+	s := t.S
+	if s == nil {
+		panic("t.S == nil")
+	}
+	if err := s.FinalizeFields(); err != nil {
 		return nil, err
 	}
 	cache.Set(typ, s)
@@ -88,6 +95,10 @@ type StructDesc struct {
 	// for GetField
 	mFields0 []*FieldDesc         // direct ID map
 	mFields1 map[int32]*FieldDesc // slow hash map
+
+	Empty unsafe.Pointer // point to a zero struct for encoding list or map
+
+	finalized bool // for FinalizeFields
 }
 
 func (p *StructDesc) GetField(v int32) *FieldDesc {
@@ -108,6 +119,29 @@ func (p *StructDesc) String() string {
 	return buf.String()
 }
 
+func (p *StructDesc) FinalizeFields() error {
+	if p.finalized {
+		return nil
+	}
+	p.finalized = true
+	for _, f := range p.Fields {
+		if err := f.finalizeField(); err != nil {
+			p.finalized = false
+			return err
+		}
+		for _, t := range []*Type{f.T, f.T.K, f.T.V} {
+			if t == nil {
+				continue
+			}
+			if err := t.finalizeType(); err != nil {
+				p.finalized = false
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 var wireTypes = []wire.Type{
 	TypeVarint:   wire.TypeVarint,
 	TypeZigZag32: wire.TypeVarint,
@@ -121,6 +155,7 @@ type FieldDesc struct {
 	ID       int32
 	Name     string
 	Offset   uintptr
+	Tag      reflect.StructTag
 	Repeated bool
 	Packed   bool
 	TagType  TagType
@@ -157,35 +192,37 @@ type FieldDesc struct {
 }
 
 func (f *FieldDesc) String() string {
-	return fmt.Sprintf("ID:%d Offset:%d Repeated:%v Packed:%v TagType:%v T:%v",
-		f.ID, f.Offset, f.Repeated, f.Packed, f.TagType, f.T)
+	return fmt.Sprintf("ID:%d Name:%s Offset:%d Repeated:%v Packed:%v TagType:%v T:%v",
+		f.ID, f.Name, f.Offset, f.Repeated, f.Packed, f.TagType, f.T)
 }
 
 func (f *FieldDesc) IsOneof() bool {
 	return f.OneofType != nil
 }
 
-func (f *FieldDesc) parse(sf reflect.StructField) (err error) {
-	tag := sf.Tag.Get("protobuf")
+func (f *FieldDesc) parse(rt reflect.Type) (err error) {
+	tag := f.Tag.Get("protobuf")
 	if tag == "" {
 		panic("not protobuf field")
 	}
 	if err = f.parseStructTag(tag); err != nil {
 		return
 	}
-	f.T, err = parseType(sf.Type)
-	if err != nil {
-		return
-	}
-	f.IsList = f.Repeated && f.T.Kind != reflect.Map
-	f.IsMap = f.T.Kind == reflect.Map
+	f.T, err = parseType(rt)
+	return
+}
+
+func (f *FieldDesc) finalizeField() (err error) {
+	t := f.T
+	f.IsList = f.Repeated && t.Kind != reflect.Map
+	f.IsMap = t.Kind == reflect.Map
 
 	if f.IsMap {
-		f.KeyType, err = parseKVTag(sf.Tag.Get("protobuf_key"))
+		f.KeyType, err = parseKVTag(f.Tag.Get("protobuf_key"))
 		if err != nil {
 			return
 		}
-		f.ValType, err = parseKVTag(sf.Tag.Get("protobuf_val"))
+		f.ValType, err = parseKVTag(f.Tag.Get("protobuf_val"))
 		if err != nil {
 			return
 		}
@@ -195,7 +232,6 @@ func (f *FieldDesc) parse(sf reflect.StructField) (err error) {
 	if err = f.checkTypeMatch(); err != nil {
 		return
 	}
-	t := f.T
 	f.AppendFunc = getAppendFunc(f.TagType, t.RealKind(), f.Packed)
 	if f.T.Kind == reflect.Map {
 		f.KeyAppendFunc = getAppendFunc(f.KeyType, t.K.RealKind(), false)
@@ -228,6 +264,7 @@ func (f *FieldDesc) checkTypeMatch() error {
 			return fmt.Errorf("repeated field is not slice or map")
 		}
 	}
+
 	if err := IsFieldTypeMatchReflectKind(f.TagType, t.RealKind()); err != nil {
 		return err
 	}
@@ -273,6 +310,8 @@ type Type struct {
 
 	// for map only
 	MapTmpVarsPool sync.Pool // for decoder tmp vars
+
+	finalized bool
 }
 
 func (t *Type) RealKind() reflect.Kind {
@@ -280,6 +319,26 @@ func (t *Type) RealKind() reflect.Kind {
 		return t.V.RealKind()
 	}
 	return t.Kind
+}
+
+func (t *Type) finalizeType() error {
+	if t.finalized {
+		return nil
+	}
+	t.finalized = true
+	if t.S != nil {
+		if err := t.S.FinalizeFields(); err != nil {
+			t.finalized = false
+			return err
+		}
+	}
+	if t.V != nil {
+		if err := t.V.finalizeType(); err != nil {
+			t.finalized = false
+			return err
+		}
+	}
+	return nil
 }
 
 // TmpMapVars contains key and value tmp vars used for updating associated map for a type
@@ -320,51 +379,55 @@ func (t *Type) String() string {
 	}
 }
 
-var cachedTypes = map[reflect.Type]*Type{}
+var (
+	cachedTypes = map[reflect.Type]*Type{}
+)
 
-func parseType(rt reflect.Type) (ret *Type, err error) {
-	if t := cachedTypes[rt]; t != nil {
+func noopFinalizeField(_ *Type) error { return nil }
+
+func parseType(rt reflect.Type) (t *Type, err error) {
+	if t = cachedTypes[rt]; t != nil {
 		return t, nil
 	}
-	ret = &Type{}
 
-	cachedTypes[rt] = ret // fix cyclic refs
+	t = &Type{}
+	cachedTypes[rt] = t // reuse result and also fix cyclic refs
 
-	ret.T = rt
-	ret.Kind = rt.Kind()
-	ret.Size = rt.Size()
-	ret.Align = rt.Align()
+	t.T = rt
+	t.Kind = rt.Kind()
+	t.Size = rt.Size()
+	t.Align = rt.Align()
 
 	if rt == bytesType { // special case
-		ret.Kind = KindBytes
+		t.Kind = KindBytes
 	}
 
-	switch ret.Kind {
+	switch t.Kind {
 	case reflect.Ptr, reflect.Slice, KindBytes, reflect.String,
 		reflect.Map, reflect.Struct:
 		// for these types, we can't use span mem allocator
 		// coz then may contain pointer
-		ret.MallocAbiType = hack.ReflectTypePtr(ret.T)
+		t.MallocAbiType = hack.ReflectTypePtr(t.T)
 	}
 
-	ret.IsPointer = ret.Kind == reflect.Pointer
-	ret.IsSlice = ret.Kind == reflect.Slice
+	t.IsPointer = t.Kind == reflect.Pointer
+	t.IsSlice = t.Kind == reflect.Slice
 
-	ret.SliceLike = ret.Kind == reflect.Slice ||
-		ret.Kind == KindBytes ||
-		ret.Kind == reflect.String
+	t.SliceLike = t.Kind == reflect.Slice ||
+		t.Kind == KindBytes ||
+		t.Kind == reflect.String
 
 	switch rt.Kind() {
 	case reflect.Map:
-		ret.K, err = parseType(rt.Key())
+		t.K, err = parseType(rt.Key())
 		if err != nil {
 			break
 		}
-		ret.V, err = parseType(rt.Elem())
+		t.V, err = parseType(rt.Elem())
 		if err != nil {
 			break
 		}
-		ret.MapTmpVarsPool.New = func() interface{} {
+		t.MapTmpVarsPool.New = func() interface{} {
 			m := &TmpMapVars{}
 			m.m = reflect.New(rt).Elem()
 			m.k = reflect.New(rt.Key())
@@ -379,12 +442,12 @@ func parseType(rt reflect.Type) (ret *Type, err error) {
 			return m
 		}
 	case reflect.Struct:
-		ret.S, err = parseStruct(rt)
+		t.S, err = parseStruct(rt)
 	case reflect.Slice:
-		ret.V, err = parseType(rt.Elem())
+		t.V, err = parseType(rt.Elem())
 	case reflect.Pointer:
-		ret.V, err = parseType(rt.Elem())
-		if err == nil && ret.V.IsPointer {
+		t.V, err = parseType(rt.Elem())
+		if err == nil && t.V.IsPointer {
 			err = errors.New("multilevel pointer")
 		}
 	default:
@@ -393,7 +456,7 @@ func parseType(rt reflect.Type) (ret *Type, err error) {
 		delete(cachedTypes, rt)
 		return nil, err
 	}
-	return ret, nil
+	return t, nil
 }
 
 var cachedStructs = map[reflect.Type]*StructDesc{}
@@ -402,8 +465,7 @@ func parseStruct(rt reflect.Type) (s *StructDesc, err error) {
 	if s = cachedStructs[rt]; s != nil {
 		return s, nil
 	}
-
-	s = &StructDesc{}
+	s = &StructDesc{Empty: reflect.New(rt).UnsafePointer()}
 	cachedStructs[rt] = s // fix cyclic refs
 	defer func() {
 		if err != nil {
@@ -412,7 +474,7 @@ func parseStruct(rt reflect.Type) (s *StructDesc, err error) {
 	}()
 
 	var oneofs []reflect.StructField
-	var fields []FieldDesc
+	var fields []*FieldDesc
 	for i, n := 0, rt.NumField(); i < n; i++ {
 		sf := rt.Field(i)
 		tag := sf.Tag.Get("protobuf")
@@ -422,8 +484,8 @@ func parseStruct(rt reflect.Type) (s *StructDesc, err error) {
 			}
 			continue
 		}
-		f := FieldDesc{Name: sf.Name, Offset: sf.Offset}
-		if err = f.parse(sf); err != nil {
+		f := &FieldDesc{Name: sf.Name, Offset: sf.Offset, Tag: sf.Tag}
+		if err = f.parse(sf.Type); err != nil {
 			return nil, fmt.Errorf("parse field %q err: %w", sf.Name, err)
 		}
 		fields = append(fields, f)
@@ -441,9 +503,10 @@ func parseStruct(rt reflect.Type) (s *StructDesc, err error) {
 				if rt.NumField() != 1 { // The struct must contains extractly one field
 					return nil, fmt.Errorf("parse field %q oneof %q err: field number != 1", o.Name, rt.String())
 				}
-				f := FieldDesc{Name: o.Name, Offset: o.Offset, OneofType: reflect.PointerTo(rt)}
+				field := rt.Field(0)
+				f := &FieldDesc{Name: o.Name, Offset: o.Offset, Tag: field.Tag, OneofType: reflect.PointerTo(rt)}
 				f.IfaceTab = hack.IfaceTab(o.Type, rt)
-				if err = f.parse(rt.Field(0)); err != nil {
+				if err = f.parse(field.Type); err != nil {
 					return nil, fmt.Errorf("parse field %q oneof %q err: %w", o.Name, rt.String(), err)
 				}
 				fields = append(fields, f)
@@ -451,18 +514,11 @@ func parseStruct(rt reflect.Type) (s *StructDesc, err error) {
 		}
 	}
 
-	// reduce in-use objects
-	ff := make([]FieldDesc, len(fields))
-	copy(ff, fields)
-	s.Fields = make([]*FieldDesc, len(ff))
-	for i := range ff {
-		s.Fields[i] = &ff[i]
-	}
-
 	// sort by ID
-	sort.Slice(s.Fields, func(i, j int) bool {
-		return s.Fields[i].ID < s.Fields[j].ID
+	sort.Slice(fields, func(i, j int) bool {
+		return fields[i].ID < fields[j].ID
 	})
+	s.Fields = fields
 
 	k := 0 // for s.mFields1
 	maxn := 0

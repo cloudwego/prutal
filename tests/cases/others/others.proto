@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+package others;
+
+
+option go_package = "./others";
+
+message TestNilElemMsg {
+  int64 V = 1;
+  repeated TestNilElemMsg nested_list = 2;
+  map<int64, TestNilElemMsg> nested_map = 3;
+}
