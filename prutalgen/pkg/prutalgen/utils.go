@@ -119,3 +119,42 @@ func joinErrs(errs ...error) error {
 	}
 	return errors.New(strings.Join(ss, "\n"))
 }
+
+// sort protos by topological order
+func sortProtoFiles(pp []*Proto) []*Proto {
+	// Build dependency graph
+	deps := make(map[*Proto]map[*Proto]struct{}, len(pp))
+	inDegree := make(map[*Proto]int, len(pp))
+	for _, p := range pp {
+		deps[p] = make(map[*Proto]struct{})
+		for _, imp := range p.Imports {
+			deps[p][imp.Proto] = struct{}{}
+			inDegree[imp.Proto]++
+		}
+	}
+	// Kahn's algorithm
+	ret := make([]*Proto, 0, len(pp))
+	var queue []*Proto
+	for _, p := range pp {
+		if inDegree[p] == 0 {
+			queue = append(queue, p)
+		}
+	}
+	for len(queue) > 0 {
+		p := queue[0]
+		queue = queue[1:]
+		ret = append(ret, p)
+		for dep := range deps[p] {
+			inDegree[dep]--
+			if inDegree[dep] == 0 {
+				queue = append(queue, dep)
+			}
+		}
+	}
+	// If not all protos are in result, there is a cycle
+	if len(ret) != len(pp) {
+		// fallback: return original order (or could panic), never happens?
+		return pp
+	}
+	return ret
+}

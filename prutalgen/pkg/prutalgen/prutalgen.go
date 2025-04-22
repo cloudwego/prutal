@@ -93,7 +93,8 @@ func (x *protoLoader) searchProtoFile(file string) string {
 func (x *protoLoader) LoadProto(file string) []*Proto {
 	x.reset()
 	_ = x.loadProto(file)
-	for i := len(x.protos) - 1; i >= 0; i-- { // bottom up processing
+	x.protos = sortProtoFiles(x.protos)       // sort by topological order
+	for i := len(x.protos) - 1; i >= 0; i-- { // resolve in reverse topological order
 		p := x.protos[i]
 		p.resolve()
 		if err := p.verify(); err != nil {
@@ -157,8 +158,16 @@ func (x *protoLoader) currentService() *Service {
 	return last(p.Services)
 }
 
-func (x *protoLoader) getProtoByFile(fn string) *Proto {
-	for _, p := range x.protos {
+func (x *protoLoader) getByFile(fn string, stack bool) *Proto {
+	if !stack {
+		for _, p := range x.protos {
+			if p.ProtoFile == fn {
+				return p
+			}
+		}
+		return nil
+	}
+	for _, p := range x.protostack {
 		if p.ProtoFile == fn {
 			return p
 		}
@@ -170,24 +179,29 @@ func (x *protoLoader) loadProto(file string) *Proto {
 	if embeddedProtos[file] != nil {
 		return x.loadEmbeddedProto(file)
 	}
-	p := &Proto{
-		ProtoFile: x.searchProtoFile(file),
-		Edition:   editionProto2,
+	protofile := x.searchProtoFile(file)
 
-		l: x.l,
-	}
-	p.setGoPackage(x.proto2gopkg[file])
-	push(&x.protostack, p)
-	defer pop(&x.protostack)
-
-	if proto := x.getProtoByFile(p.ProtoFile); proto != nil {
+	if proto := x.getByFile(protofile, true); proto != nil {
 		files := make([]string, 0, len(x.protostack))
 		for _, p := range x.protostack {
 			files = append(files, p.ProtoFile)
 		}
 		x.l.Fatalf("cyclic import is NOT allowed: %s", strings.Join(files, " \n\t-> "))
-		return p
+		return proto
 	}
+
+	if proto := x.getByFile(protofile, false); proto != nil {
+		return proto // parsed
+	}
+
+	p := &Proto{
+		ProtoFile: protofile,
+		Edition:   editionProto2,
+		l:         x.l,
+	}
+	p.setGoPackage(x.proto2gopkg[file])
+	push(&x.protostack, p)
+	defer pop(&x.protostack)
 	x.protos = append(x.protos, p)
 
 	x.Infof("parsing")
@@ -200,6 +214,10 @@ func (x *protoLoader) loadProto(file string) *Proto {
 }
 
 func (x *protoLoader) loadEmbeddedProto(file string) *Proto {
+	if proto := x.getByFile(file, false); proto != nil {
+		return proto // parsed
+	}
+
 	data := embeddedProtos[file]
 	p := &Proto{
 		ProtoFile: file,

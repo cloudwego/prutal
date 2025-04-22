@@ -35,10 +35,14 @@ func (l testLogger) Printf(format string, v ...any) {
 }
 
 func writeFile(t *testing.T, fn string, b []byte) string {
-	dir := t.TempDir()
+	t.Helper()
+	return writeFileUnderDir(t, t.TempDir(), fn, b)
+}
+
+func writeFileUnderDir(t *testing.T, dir, fn string, b []byte) string {
+	t.Helper()
 	fn = filepath.Join(dir, fn)
 	if err := os.WriteFile(fn, b, 0644); err != nil {
-		t.Helper()
 		t.Fatal(err)
 	}
 	return fn
@@ -123,6 +127,41 @@ func TestLoader_FileNotFound(t *testing.T) {
 	t.Fatal("never goes here. logger Fatalf in LoadProto")
 }
 
+func TestLoader_RAG(t *testing.T) {
+	// a -> (b, c)
+	// b -> d
+	// c -> d
+	// d -> e
+	dir := t.TempDir()
+	_ = writeFileUnderDir(t, dir, "e.proto", []byte(
+		`package e;`+`option go_package = "./e";`,
+	))
+	_ = writeFileUnderDir(t, dir, "d.proto", []byte(
+		`import "e.proto";`+`package d;`+`option go_package = "./d";`,
+	))
+
+	_ = writeFileUnderDir(t, dir, "c.proto", []byte(
+		`import "d.proto";`+`package c;`+`option go_package = "./c";`,
+	))
+
+	_ = writeFileUnderDir(t, dir, "b.proto", []byte(
+		`import "d.proto";`+`package b;`+`option go_package = "./b";`,
+	))
+
+	fn := writeFileUnderDir(t, dir, "a.proto", []byte(
+		`import "b.proto";`+`import "c.proto";`+
+			`package a;`+`option go_package = "./a";`,
+	))
+	x := NewLoader([]string{filepath.Dir(fn)}, nil)
+	ff := x.LoadProto("a.proto")
+	assert.Equal(t, len(ff), 5)
+	assert.Equal(t, filepath.Base(ff[0].ProtoFile), "a.proto")
+	assert.Equal(t, filepath.Base(ff[1].ProtoFile), "b.proto")
+	assert.Equal(t, filepath.Base(ff[2].ProtoFile), "c.proto")
+	assert.Equal(t, filepath.Base(ff[3].ProtoFile), "d.proto")
+	assert.Equal(t, filepath.Base(ff[4].ProtoFile), "e.proto")
+}
+
 func TestLoader_CyclicImport(t *testing.T) {
 	fn := writeFile(t, "test.proto", []byte(
 		`import "test.proto";`,
@@ -133,4 +172,5 @@ func TestLoader_CyclicImport(t *testing.T) {
 	})
 	_ = x.LoadProto("test.proto")
 	t.Fatal("never goes here. logger Fatalf in LoadProto")
+
 }
