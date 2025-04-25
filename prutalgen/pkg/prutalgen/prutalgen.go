@@ -251,6 +251,9 @@ func (x *protoLoader) parseInput(in antlr.CharStream) {
 	}
 	antlr.ParseTreeWalkerDefault.Walk(x, proto)
 
+	comment := x.consumeHeadComment(proto)
+	p.Directives.Parse(comment)
+
 	gopkg, ok := p.Options.Get("go_package")
 	if ok {
 		p.setGoPackage(gopkg)

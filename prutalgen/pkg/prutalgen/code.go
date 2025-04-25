@@ -44,7 +44,6 @@ type GoCodeGen struct {
 func NewGoCodeGen() *GoCodeGen {
 	return &GoCodeGen{
 		Format: true,
-		Getter: false,
 	}
 }
 
@@ -152,7 +151,7 @@ func (g *GoCodeGen) EnumGen(e *Enum, w *CodeWriter) {
 		w.F(")")
 	}
 
-	if e.OptionGenNameMapping() {
+	if e.genMapping() {
 		w.F("\n// Enum value maps for %s.", e.GoName)
 		w.F("var %s_name = map[int32]string {", e.GoName)
 		for _, f := range e.Fields {
@@ -206,7 +205,7 @@ func (g *GoCodeGen) MessageGen(m *Message, w *CodeWriter) {
 		}
 		g.FieldGen(f, w)
 	}
-	if m.OptionUnknownFields() {
+	if m.genUnknownFields() {
 		w.F("unknownFields []byte `json:\"-\"`")
 	}
 	w.F("} %s", m.InlineComment)

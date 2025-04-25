@@ -26,6 +26,7 @@ import (
 type Service struct {
 	HeadComment   string
 	InlineComment string
+	Directives    Directives
 
 	Name   string
 	GoName string
@@ -49,6 +50,7 @@ func (s *Service) verify() error { return nil }
 type Method struct {
 	HeadComment   string
 	InlineComment string
+	Directives    Directives
 
 	Name   string // orignal name in IDL
 	GoName string
@@ -77,6 +79,7 @@ func (x *protoLoader) EnterServiceDef(c *parser.ServiceDefContext) {
 		Name:  c.ServiceName().GetText(),
 		Proto: x.currentProto(),
 	}
+	s.Directives.Parse(s.HeadComment, s.InlineComment)
 
 	p := x.currentProto()
 	p.Services = append(p.Services, s)
@@ -87,9 +90,11 @@ func (x *protoLoader) EnterRpc(c *parser.RpcContext) {
 	//	messageType ")" (( "{" {option | emptyStatement } "}" ) | ";")
 	s := x.currentService()
 	m := &Method{
+		HeadComment: x.consumeHeadComment(c), InlineComment: x.consumeInlineComment(c),
 		Name:    c.RpcName().GetText(),
 		Service: s,
 	}
+	m.Directives.Parse(m.HeadComment, m.InlineComment)
 	s.Methods = append(s.Methods, m)
 }
 

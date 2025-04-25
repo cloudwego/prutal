@@ -24,46 +24,48 @@ import (
 
 func TestEnum(t *testing.T) {
 	e := &Enum{Proto: &Proto{}}
-	assert.False(t, e.OptionGenNoPrefix())
-	assert.True(t, e.OptionGenNameMapping())
+	assert.False(t, e.genNoPrefix())
+	assert.True(t, e.genMapping())
 
+	// genNoPrefix, case: Enum Directives
+	e.Directives = Directives{prutalNoEnumPrefix}
+	e.Options = nil
+	assert.True(t, e.genNoPrefix())
+	e.Directives = nil
+	assert.False(t, e.genNoPrefix())
+
+	// genNoPrefix, case: gogoproto options
 	oo := Options{
-		{Name: optionNoEnumPrefix, Value: ""},
 		{Name: gogoproto_enum_prefix, Value: "false"},     // lower higher priority
 		{Name: gogoproto_enum_prefix_all, Value: "false"}, // lower higher priority
 	}
+	e.Directives = nil
 	e.Options = oo
-	oo[0].Value = "true"
-	assert.True(t, e.OptionGenNoPrefix())
-	oo[0].Value = "false"
-	assert.False(t, e.OptionGenNoPrefix())
-	e.Options = oo[1:]
-	assert.True(t, e.OptionGenNoPrefix())
+	assert.True(t, e.genNoPrefix())
 
+	// genNoPrefix, case: Proto Directives
 	e.Options = nil
-	e.Proto.Options = oo
-	oo[0].Value = "true"
-	assert.True(t, e.OptionGenNoPrefix())
-	oo[0].Value = "false"
-	assert.False(t, e.OptionGenNoPrefix())
-	e.Proto.Options = oo[1:]
-	assert.True(t, e.OptionGenNoPrefix())
+	e.Proto.Directives = Directives{prutalNoEnumPrefix}
+	assert.True(t, e.genNoPrefix())
+	e.Proto.Directives = nil
+	assert.False(t, e.genNoPrefix())
 
-	oo = Options{
-		{Name: optionEnumNameMapping, Value: ""},
-	}
-
-	e.Options = oo
-	oo[0].Value = "true"
-	assert.True(t, e.OptionGenNameMapping())
-	oo[0].Value = "false"
-	assert.False(t, e.OptionGenNameMapping())
-	e.Options = nil
+	// genNoPrefix, case: Proto gogoproto options
 	e.Proto.Options = oo
-	oo[0].Value = "true"
-	assert.True(t, e.OptionGenNameMapping())
-	oo[0].Value = "false"
-	assert.False(t, e.OptionGenNameMapping())
+	assert.True(t, e.genNoPrefix())
+	e.Proto.Options = nil
+
+	// genMapping, case: Enum Directives
+	e.Directives = Directives{prutalNoEnumMapping}
+	assert.False(t, e.genMapping())
+
+	// genMapping, case: Proto Directives
+	e.Directives = nil
+	e.Proto.Directives = Directives{prutalNoEnumMapping}
+	assert.False(t, e.genMapping())
+	e.Proto.Directives = nil
+	assert.True(t, e.genMapping())
+
 }
 
 func TestEnum_Verify(t *testing.T) {
@@ -107,11 +109,11 @@ enum eEnum {
 }
 
 
+//prutalgen:no_enum_prefix
 enum myEnum1 {
-	option (prutal.gen_no_enum_prefix) = true;
   A = 0;
   B = 1;
-  C = 2 [(prutal.gen_no_enum_prefix) = false];
+  C = 2;
 }
 `)
 	t.Log(f.String())
@@ -134,14 +136,14 @@ enum myEnum1 {
 	assert.Equal(t, "myEnum1", e.Name)
 	assert.Equal(t, "MyEnum1", e.GoName)
 	assert.Equal(t, 3, len(e.Fields))
-	assert.Equal(t, "A", e.Fields[0].Name) // prutal.gen_no_enum_prefix=true
+	assert.Equal(t, "A", e.Fields[0].Name)
 	assert.Equal(t, "A", e.Fields[0].GoName)
 	assert.Equal(t, int32(0), e.Fields[0].Value)
-	assert.Equal(t, "B", e.Fields[1].Name) // prutal.gen_no_enum_prefix=true
+	assert.Equal(t, "B", e.Fields[1].Name)
 	assert.Equal(t, "B", e.Fields[1].GoName)
 	assert.Equal(t, int32(1), e.Fields[1].Value)
-	assert.Equal(t, "C", e.Fields[2].Name) // prutal.gen_no_enum_prefix=true
-	assert.Equal(t, "MyEnum1_C", e.Fields[2].GoName)
+	assert.Equal(t, "C", e.Fields[2].Name)
+	assert.Equal(t, "C", e.Fields[2].GoName)
 	assert.Equal(t, int32(2), e.Fields[2].Value)
 
 	m := f.Messages[0]

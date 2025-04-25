@@ -43,6 +43,8 @@ type Proto struct {
 	GoImport  string // the full import path
 	GoPackage string // package name without path
 
+	Directives Directives
+
 	Imports []*Import
 	Options Options
 

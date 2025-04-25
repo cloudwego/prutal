@@ -27,6 +27,7 @@ import (
 type Message struct {
 	HeadComment   string
 	InlineComment string
+	Directives    Directives
 
 	Name string // original name in IDL
 
@@ -79,12 +80,14 @@ func (m *Message) IsReservedField(v int32) bool {
 	return m.reserved.In(v)
 }
 
-func (m *Message) OptionUnknownFields() bool {
-	if v, ok := m.Options.Get(optionUnknownFields); ok {
-		return istrue(v)
-	} else if v, ok := m.Proto.Options.Get(optionUnknownFields); ok {
-		return istrue(v)
-	} else if v, ok := m.Options.Get(gogoproto_goproto_unrecognized); ok {
+func (m *Message) genUnknownFields() bool {
+	if v, ok := m.Directives.IsSet(prutalUnknownFields); ok {
+		return v
+	}
+	if v, ok := m.Proto.Directives.IsSet(prutalUnknownFields); ok {
+		return v
+	}
+	if v, ok := m.Options.Get(gogoproto_goproto_unrecognized); ok {
 		return istrue(v)
 	} else if v, ok := m.Proto.Options.Get(gogoproto_goproto_unrecognized_all); ok {
 		return istrue(v)
@@ -161,6 +164,8 @@ func (x *protoLoader) EnterMessageDef(c *parser.MessageDefContext) {
 	m := &Message{}
 	m.HeadComment = x.consumeHeadComment(c)
 	m.InlineComment = x.consumeInlineComment(c)
+	m.Directives.Parse(m.HeadComment, m.InlineComment)
+
 	m.Name = c.MessageName().GetText()
 	switch getRuleIndex(c.GetParent()) {
 	case parser.ProtobufParserRULE_topLevelDef: // top level message

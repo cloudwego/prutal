@@ -28,6 +28,7 @@ import (
 type Enum struct {
 	HeadComment   string
 	InlineComment string
+	Directives    Directives
 
 	Name string // orignial name in proto
 
@@ -71,11 +72,11 @@ func (e *Enum) IsReservedField(v int32) bool {
 	return e.reserved.In(v)
 }
 
-func (e *Enum) OptionGenNoPrefix() bool {
-	if v, ok := e.Options.Get(optionNoEnumPrefix); ok {
-		return istrue(v)
-	} else if v, ok := e.Proto.Options.Get(optionNoEnumPrefix); ok {
-		return istrue(v)
+func (e *Enum) genNoPrefix() bool {
+	if e.Directives.Has(prutalNoEnumPrefix) {
+		return true
+	} else if e.Proto.Directives.Has(prutalNoEnumPrefix) {
+		return true
 	} else if v, ok := e.Options.Get(gogoproto_enum_prefix); ok {
 		return isfalse(v)
 	} else if v, ok := e.Proto.Options.Get(gogoproto_enum_prefix_all); ok {
@@ -84,11 +85,12 @@ func (e *Enum) OptionGenNoPrefix() bool {
 	return false
 }
 
-func (e *Enum) OptionGenNameMapping() bool {
-	if v, ok := e.Options.Get(optionEnumNameMapping); ok {
-		return istrue(v)
-	} else if v, ok := e.Proto.Options.Get(optionEnumNameMapping); ok {
-		return istrue(v)
+func (e *Enum) genMapping() bool {
+	if e.Directives.Has(prutalNoEnumMapping) {
+		return false
+	}
+	if e.Proto.Directives.Has(prutalNoEnumMapping) {
+		return false
 	}
 	return true
 }
@@ -100,7 +102,7 @@ func (e *Enum) resolve() {
 		e.GoName = e.Msg.GoName + "_" + e.GoName
 	}
 	for _, f := range e.Fields {
-		if f.OptionGenNoPrefix() {
+		if f.genNoPrefix() {
 			f.GoName = strs.GoCamelCase(f.Name)
 		} else if e.Msg != nil {
 			f.GoName = e.Msg.GoName + "_" + f.Name
@@ -127,6 +129,7 @@ func (e *Enum) verify() error {
 type EnumField struct {
 	HeadComment   string
 	InlineComment string
+	Directives    Directives
 
 	Name string // orignial name in proto
 
@@ -137,11 +140,11 @@ type EnumField struct {
 	Enum *Enum
 }
 
-func (x *EnumField) OptionGenNoPrefix() bool {
-	if v, ok := x.Options.Get(optionNoEnumPrefix); ok {
-		return istrue(v)
+func (x *EnumField) genNoPrefix() bool {
+	if x.Directives.Has(prutalNoEnumPrefix) {
+		return true
 	}
-	return x.Enum.OptionGenNoPrefix()
+	return x.Enum.genNoPrefix()
 }
 
 func (x *protoLoader) EnterEnumDef(c *parser.EnumDefContext) {
@@ -149,6 +152,7 @@ func (x *protoLoader) EnterEnumDef(c *parser.EnumDefContext) {
 	e := &Enum{
 		HeadComment: x.consumeHeadComment(c), InlineComment: x.consumeInlineComment(c),
 		Name: c.EnumName().GetText()}
+	e.Directives.Parse(e.HeadComment, e.InlineComment)
 	switch getRuleIndex(c.GetParent()) {
 	case parser.ProtobufParserRULE_topLevelDef: // top level message
 		p := x.currentProto()
@@ -174,6 +178,7 @@ func (x *protoLoader) ExitEnumField(c *parser.EnumFieldContext) {
 	f := &EnumField{
 		HeadComment: x.consumeHeadComment(c), InlineComment: x.consumeInlineComment(c),
 		Name: c.Ident().GetText()}
+	f.Directives.Parse(f.HeadComment, f.InlineComment)
 
 	//  (MINUS)? intLit
 	if num, ok := text.UnmarshalI32(c.IntLit().GetText()); !ok {

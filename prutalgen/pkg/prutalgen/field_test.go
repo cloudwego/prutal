@@ -25,15 +25,19 @@ import (
 func TestField(t *testing.T) {
 	f := &Field{}
 
-	// OptionGenNoPointer
+	// genNoPointer
+	f.Directives = nil
 	f.Options = nil
-	assert.False(t, f.OptionGenNoPointer())
+	assert.False(t, f.genNoPointer())
 
-	f.Options = Options{{Name: optionNoPointer, Value: "true"}}
-	assert.True(t, f.OptionGenNoPointer())
+	f.Directives = Directives{prutalNoPointer}
+	assert.True(t, f.genNoPointer())
 
+	f.Directives = nil
 	f.Options = Options{{Name: gogoproto_nullable, Value: "false"}}
-	assert.True(t, f.OptionGenNoPointer())
+	assert.True(t, f.genNoPointer())
+	f.Options = nil
+	assert.False(t, f.genNoPointer())
 
 	reset := func(f *Field) {
 		f.Options = nil
@@ -74,16 +78,19 @@ func TestField(t *testing.T) {
 
 	// GoTypeName:message
 	reset(f)
-	nopointerOpt := Options{{Name: optionNoPointer, Value: "true"}}
+	nopointer := Directives{prutalNoPointer}
 	f.Type = &Type{Name: "Msg", typ: &Message{GoName: "Msg"}}
 	assert.Equal(t, "*Msg", f.GoTypeName())
-	f.Options = nopointerOpt
+
+	f.Directives = nopointer
 	assert.Equal(t, "Msg", f.GoTypeName())
-	f.Options = nil
+	f.Directives = nil
+
 	f.Repeated = true
 	assert.Equal(t, "[]*Msg", f.GoTypeName())
-	f.Options = nopointerOpt
+	f.Directives = nopointer
 	assert.Equal(t, "[]Msg", f.GoTypeName())
+	f.Directives = nil
 
 	// GoZero: map
 	f.Key = &Type{Name: "float"}
@@ -124,12 +131,11 @@ func TestField(t *testing.T) {
 	assert.Equal(t, "0", f.GoZero())
 
 	// GOZero: struct
-	f.Options = nil
 	f.Type = &Type{Name: "my_struct",
 		typ: &Message{GoName: "MyStruct"},
 	}
 	assert.Equal(t, "nil", f.GoZero())
-	f.Options = nopointerOpt
+	f.Directives = nopointer
 	assert.Equal(t, "MyStruct{}", f.GoZero())
 
 }

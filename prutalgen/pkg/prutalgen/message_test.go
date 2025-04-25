@@ -34,22 +34,27 @@ func TestMessage(t *testing.T) {
 	m.Messages = []*Message{{Name: "m", Proto: p}}
 	assert.Same(t, m.Messages[0], m.getType("m.m"))
 
-	// OptionUnknownFields
-	assert.False(t, m.OptionUnknownFields())
+	// genUnknownFields
+	assert.False(t, m.genUnknownFields())
 
-	m.Options = Options{{Name: optionUnknownFields, Value: "true"}}
-	assert.True(t, m.OptionUnknownFields())
+	// case: Message Directives
+	m.Directives = Directives{prutalUnknownFields}
+	assert.True(t, m.genUnknownFields())
+	m.Directives = nil
 
+	// case: Message gogoproto
 	m.Options = Options{{Name: gogoproto_goproto_unrecognized, Value: "true"}}
-	assert.True(t, m.OptionUnknownFields())
-
+	assert.True(t, m.genUnknownFields())
 	m.Options = nil
 
-	p.Options = Options{{Name: optionUnknownFields, Value: "true"}}
-	assert.True(t, m.OptionUnknownFields())
+	// case: Proto Directives
+	p.Directives = Directives{prutalUnknownFields}
+	assert.True(t, m.genUnknownFields())
+	p.Directives = nil
 
+	// case: Proto gogoproto
 	p.Options = Options{{Name: gogoproto_goproto_unrecognized_all, Value: "true"}}
-	assert.True(t, m.OptionUnknownFields())
+	assert.True(t, m.genUnknownFields())
 
 	// String
 	m.Fields = []*Field{{Name: "f"}}

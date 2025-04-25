@@ -123,12 +123,12 @@ func joinErrs(errs ...error) error {
 // sort protos by topological order
 func sortProtoFiles(pp []*Proto) []*Proto {
 	// Build dependency graph
-	deps := make(map[*Proto]map[*Proto]struct{}, len(pp))
+	deps := make(map[*Proto][]*Proto, len(pp))
 	inDegree := make(map[*Proto]int, len(pp))
 	for _, p := range pp {
-		deps[p] = make(map[*Proto]struct{})
+		deps[p] = []*Proto{}
 		for _, imp := range p.Imports {
-			deps[p][imp.Proto] = struct{}{}
+			deps[p] = append(deps[p], imp.Proto)
 			inDegree[imp.Proto]++
 		}
 	}
@@ -144,7 +144,7 @@ func sortProtoFiles(pp []*Proto) []*Proto {
 		p := queue[0]
 		queue = queue[1:]
 		ret = append(ret, p)
-		for dep := range deps[p] {
+		for _, dep := range deps[p] {
 			inDegree[dep]--
 			if inDegree[dep] == 0 {
 				queue = append(queue, dep)

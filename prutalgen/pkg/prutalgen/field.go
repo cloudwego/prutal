@@ -31,6 +31,7 @@ import (
 type Field struct {
 	HeadComment   string
 	InlineComment string
+	Directives    Directives
 
 	// names in original IDL
 	Name string
@@ -51,6 +52,7 @@ type Field struct {
 	rule  antlr.ParserRuleContext
 }
 
+// String returns a string representation of the Field, including its number, Go name, and type(s).
 func (f *Field) String() string {
 	b := &strings.Builder{}
 	if f.IsMap() {
@@ -61,18 +63,22 @@ func (f *Field) String() string {
 	return b.String()
 }
 
+// IsMap reports whether the field is a map type.
 func (f *Field) IsMap() bool {
 	return f.Key != nil
 }
 
+// IsEnum reports whether the field is an enum type
 func (f *Field) IsEnum() bool {
 	return !f.IsMap() && f.Type.IsEnum()
 }
 
+// IsMessage reports whether the field is a message type
 func (f *Field) IsMessage() bool {
 	return !f.IsMap() && f.Type.IsMessage()
 }
 
+// IsPackedEncoding reports whether the field uses packed encoding
 func (f *Field) IsPackedEncoding() bool {
 	if f.IsMap() {
 		return false
@@ -105,9 +111,12 @@ func (f *Field) resolve() {
 	// no need to call resolve, map is alaways scalar type
 }
 
-func (f *Field) OptionGenNoPointer() bool {
-	if v, ok := f.Options.Get(optionNoPointer); ok {
-		return istrue(v)
+func (f *Field) genNoPointer() bool {
+	if f.Directives.Has(prutalNoPointer) {
+		return true
+	}
+	if f.Msg != nil && f.Msg.Directives.Has(prutalNoPointer) {
+		return true
 	}
 	if v, ok := f.Options.Get(gogoproto_nullable); ok {
 		return isfalse(v)
@@ -123,8 +132,9 @@ func goTypeName(t *Type, noptr bool) string {
 	return t.GoName()
 }
 
+// GoTypeName returns the Go type name for the field, considering pointer and repeated status.
 func (f *Field) GoTypeName() string {
-	noptr := f.OptionGenNoPointer()
+	noptr := f.genNoPointer()
 	if f.IsMap() {
 		kt := f.Key.GoName()
 		vt := goTypeName(f.Type, noptr)
@@ -139,8 +149,12 @@ func (f *Field) GoTypeName() string {
 	return f.Type.GoName()
 }
 
+// IsPointer reports whether the field is pointer type,
+// and it means the zero value of the field is nil.
+//
+// It returns true for map, slice, optional fields and oneof types.
 func (f *Field) IsPointer() bool {
-	if f.OptionGenNoPointer() {
+	if f.genNoPointer() {
 		return false
 	}
 	if f.IsMap() || f.Repeated || f.Type.GoName() == "[]byte" {
@@ -181,6 +195,7 @@ func (f *Field) IsPointer() bool {
 	return false // proto3?
 }
 
+// GoZero returns the Go zero value for the field's type.
 func (f *Field) GoZero() string {
 	if f.IsMap() || f.Repeated {
 		return "nil"
@@ -213,7 +228,7 @@ func (f *Field) GoZero() string {
 	case "[]byte":
 		return "nil"
 	}
-	if f.IsMessage() && f.OptionGenNoPointer() {
+	if f.IsMessage() && f.genNoPointer() {
 		return ft + "{}" // zero struct
 	}
 	return "nil"
@@ -276,6 +291,7 @@ func (x *protoLoader) newField(c fieldWithKeyTypeContext) *Field {
 		rule: c,
 	}
 	f.Type.f = f
+	f.Directives.Parse(f.HeadComment, f.InlineComment)
 
 	if kt := c.KeyType(); kt != nil {
 		f.Key = &Type{Name: kt.GetText(), rule: kt}

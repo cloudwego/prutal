@@ -39,14 +39,6 @@ const ( // implemented options of github.com/gogo/protobuf
 	gogoproto_goproto_unrecognized_all = "(gogoproto.goproto_unrecognized_all)"
 )
 
-const ( // prutal options
-	optionNoPointer       = "(prutal.gen_no_pointer)"
-	optionNoEnumPrefix    = "(prutal.gen_no_enum_prefix)"
-	optionEnumNameMapping = "(prutal.gen_enum_name_mapping)"
-	optionGetter          = "(prutal.gen_getter)"
-	optionUnknownFields   = "(prutal.gen_unknown_fields)"
-)
-
 const (
 	// editions features
 	// see: https://protobuf.dev/editions/features/
