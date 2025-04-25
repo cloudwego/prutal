@@ -35,11 +35,11 @@ func main() {
 		GenGetter bool
 	)
 	flags := flag.NewFlagSet("prutalgen", flag.ExitOnError)
-	flags.Var(&protoPath, "proto_path", "")
-	flags.Var(&protoPath, "I", "")
-	flags.StringVar(&out, "go_out", "", "")
-	flags.Var(&opts, "go_opt", "")
-	flags.BoolVar(&GenGetter, "gen_getter", false, "")
+	flags.Var(&protoPath, "proto_path", "proto file include path, same as protoc -I")
+	flags.Var(&protoPath, "I", "proto file include path, same as protoc -I")
+	flags.StringVar(&out, "go_out", "", "generate code output path, same as protoc -go_out")
+	flags.Var(&opts, "go_opt", "same as protoc -go_opt")
+	flags.BoolVar(&GenGetter, "gen_getter", false, "whether generate GetXXX methods")
 	_ = flags.Parse(os.Args[1:])
 
 	if len(protoPath) == 0 {
