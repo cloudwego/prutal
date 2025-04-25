@@ -49,6 +49,9 @@ func getCoderType(t TagType, kd reflect.Kind) wire.CoderType {
 		if kd == KindBytes {
 			return wire.CoderBytes
 		}
+		if kd == reflect.Struct {
+			return wire.CoderStruct
+		}
 	}
 	return wire.CoderUnknown
 }

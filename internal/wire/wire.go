@@ -64,5 +64,6 @@ const ( // used for coder func mapping
 	CoderBytes
 	CoderString
 	CoderBool
+	CoderStruct
 	CoderUnknown
 )

@@ -36,7 +36,7 @@ func (p *FieldDesc) parseStructTag(tag string) error {
 		case s == "opt":
 			// not in use
 		case s == "req":
-			// ignore `required` field, it's only for proto2
+			p.Required = true // proto2
 		case s == "rep":
 			p.Repeated = true
 		case s == "varint":
