@@ -324,7 +324,7 @@ func parseStruct(rt reflect.Type) (s *StructDesc, err error) {
 				}
 				// Pointer -> Struct
 				rt = rt.Elem()
-				if rt.NumField() != 1 { // The struct must contains extractly one field
+				if rt.NumField() != 1 { // The struct must contains exactly one field
 					return nil, fmt.Errorf("parse field %q oneof %q err: field number != 1", o.Name, rt.String())
 				}
 				field := rt.Field(0)

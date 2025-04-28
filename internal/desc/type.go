@@ -85,35 +85,6 @@ func (t *Type) finalizeType() error {
 	return nil
 }
 
-// TmpMapVars contains key and value tmp vars used for updating associated map for a type
-type TmpMapVars struct {
-	m reflect.Value
-
-	k  reflect.Value  // t.K.T
-	kp unsafe.Pointer // *t.K.T
-
-	v  reflect.Value  // t.V.T
-	vp unsafe.Pointer // *t.V.T
-
-	// zero value of v,
-	// only used when non-pointer struct as map val
-	// we need to zero the tmp var before using it
-	z reflect.Value
-}
-
-func (p *TmpMapVars) MapWithPtr(x unsafe.Pointer) reflect.Value {
-	return hack.ReflectValueWithPtr(p.m, x)
-}
-
-func (p *TmpMapVars) KeyPointer() unsafe.Pointer { return p.kp }
-func (p *TmpMapVars) ValPointer() unsafe.Pointer { return p.vp }
-func (p *TmpMapVars) Update(m reflect.Value)     { m.SetMapIndex(p.k, p.v) }
-func (p *TmpMapVars) Reset() {
-	if p.z.IsValid() {
-		p.v.Set(p.z)
-	}
-}
-
 func (t *Type) String() string {
 	switch t.Kind {
 	case reflect.Struct:
@@ -171,20 +142,7 @@ func parseType(rt reflect.Type) (t *Type, err error) {
 		if err != nil {
 			break
 		}
-		t.MapTmpVarsPool.New = func() interface{} {
-			m := &TmpMapVars{}
-			m.m = reflect.New(rt).Elem()
-			m.k = reflect.New(rt.Key())
-			m.kp = m.k.UnsafePointer()
-			m.k = m.k.Elem()
-			m.v = reflect.New(rt.Elem())
-			m.vp = m.v.UnsafePointer()
-			m.v = m.v.Elem()
-			if rt.Elem().Kind() == reflect.Struct {
-				m.z = reflect.Zero(rt.Elem())
-			}
-			return m
-		}
+		t.MapTmpVarsPool.New = newTmpMapVarsFunc(rt)
 	case reflect.Struct:
 		t.S, err = parseStruct(rt)
 	case reflect.Slice:
@@ -201,4 +159,144 @@ func parseType(rt reflect.Type) (t *Type, err error) {
 		return nil, err
 	}
 	return t, nil
+}
+
+// TmpMapVars contains key and value tmp vars used for updating associated map for a type
+type TmpMapVars struct {
+	m reflect.Value
+
+	k  reflect.Value  // t.K.T
+	kp unsafe.Pointer // *t.K.T
+
+	v  reflect.Value  // t.V.T
+	vp unsafe.Pointer // *t.V.T
+
+	// zero value of v,
+	// only used when non-pointer struct as map val
+	// we need to zero the tmp var before using it
+	z reflect.Value
+
+	Update func(p *TmpMapVars, mp unsafe.Pointer) // see newTmpMapVarsFunc
+}
+
+func (p *TmpMapVars) MapWithPtr(x unsafe.Pointer) reflect.Value {
+	return hack.ReflectValueWithPtr(p.m, x)
+}
+func (p *TmpMapVars) KeyPointer() unsafe.Pointer { return p.kp }
+func (p *TmpMapVars) ValPointer() unsafe.Pointer { return p.vp }
+
+func (p *TmpMapVars) Reset() {
+	if p.z.IsValid() {
+		p.v.Set(p.z)
+	}
+}
+
+// for (*sync.Pool).New
+func newTmpMapVarsFunc(rt reflect.Type) func() any {
+	if rt.Kind() != reflect.Map {
+		panic(rt.Kind())
+	}
+	kt := rt.Key()
+	et := rt.Elem()
+	updateFunc := defaultMapUpdateFunc
+	switch kt.Kind() {
+	case reflect.Int64, reflect.Uint64:
+		switch et.Kind() {
+		case reflect.Pointer:
+			updateFunc = mapUpdateFunc_u64_unsafe
+		case reflect.String:
+			updateFunc = mapUpdateFunc_u64_string
+		case reflect.Struct:
+			if et.Size() == 0 {
+				updateFunc = mapUpdateFunc_u64_empty
+			}
+		}
+	case reflect.Int32, reflect.Uint32:
+		switch et.Kind() {
+		case reflect.Pointer:
+			updateFunc = mapUpdateFunc_u32_unsafe
+		case reflect.String:
+			updateFunc = mapUpdateFunc_u32_string
+		case reflect.Struct:
+			if et.Size() == 0 {
+				updateFunc = mapUpdateFunc_u32_empty
+			}
+		}
+	case reflect.String:
+		switch et.Kind() {
+		case reflect.Pointer:
+			updateFunc = mapUpdateFunc_string_unsafe
+		case reflect.String:
+			updateFunc = mapUpdateFunc_string_string
+		case reflect.Struct:
+			if et.Size() == 0 {
+				updateFunc = mapUpdateFunc_string_empty
+			}
+		}
+	}
+	return func() any {
+		p := &TmpMapVars{}
+		p.m = reflect.New(rt).Elem()
+		p.k = reflect.New(kt)
+		p.kp = p.k.UnsafePointer()
+		p.k = p.k.Elem()
+		p.v = reflect.New(et)
+		p.vp = p.v.UnsafePointer()
+		p.v = p.v.Elem()
+		if et.Kind() == reflect.Struct {
+			p.z = reflect.Zero(et)
+		}
+		p.Update = updateFunc
+		return p
+	}
+}
+
+func defaultMapUpdateFunc(p *TmpMapVars, mp unsafe.Pointer) {
+	m := hack.ReflectValueWithPtr(p.m, mp)
+	m.SetMapIndex(p.k, p.v)
+}
+
+func mapUpdateFunc_u64_unsafe(p *TmpMapVars, mp unsafe.Pointer) {
+	m := *(*map[uint64]unsafe.Pointer)(mp)
+	m[*(*uint64)(p.kp)] = *(*unsafe.Pointer)(p.vp)
+}
+
+func mapUpdateFunc_u64_empty(p *TmpMapVars, mp unsafe.Pointer) {
+	m := *(*map[uint64]struct{})(mp)
+	m[*(*uint64)(p.kp)] = struct{}{}
+}
+
+func mapUpdateFunc_u64_string(p *TmpMapVars, mp unsafe.Pointer) {
+	m := *(*map[uint64]string)(mp)
+	m[*(*uint64)(p.kp)] = *(*string)(p.vp)
+}
+
+func mapUpdateFunc_u32_unsafe(p *TmpMapVars, mp unsafe.Pointer) {
+	m := *(*map[uint32]unsafe.Pointer)(mp)
+	m[*(*uint32)(p.kp)] = *(*unsafe.Pointer)(p.vp)
+}
+
+func mapUpdateFunc_u32_empty(p *TmpMapVars, mp unsafe.Pointer) {
+	m := *(*map[uint32]struct{})(mp)
+	m[*(*uint32)(p.kp)] = struct{}{}
+}
+
+func mapUpdateFunc_u32_string(p *TmpMapVars, mp unsafe.Pointer) {
+	m := *(*map[uint32]string)(mp)
+	m[*(*uint32)(p.kp)] = *(*string)(p.vp)
+}
+
+func mapUpdateFunc_string_unsafe(p *TmpMapVars, mp unsafe.Pointer) {
+	m := *(*map[string]unsafe.Pointer)(mp)
+	m[*(*string)(p.kp)] = *(*unsafe.Pointer)(p.vp)
+}
+
+func mapUpdateFunc_string_empty(p *TmpMapVars, mp unsafe.Pointer) {
+	m := *(*map[string]struct{})(mp)
+	m[*(*string)(p.kp)] = struct{}{}
+}
+
+func mapUpdateFunc_string_string(p *TmpMapVars, mp unsafe.Pointer) {
+	m := *(*map[string]string)(mp)
+	m[*(*string)(p.kp)] = *(*string)(p.vp)
 }

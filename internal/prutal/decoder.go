@@ -530,8 +530,6 @@ func (d *Decoder) DecodeMapPair(b []byte, p unsafe.Pointer, f *desc.FieldDesc, t
 	if *(*unsafe.Pointer)(p) == nil {
 		m = reflect.MakeMap(f.T.T)
 		*(*unsafe.Pointer)(p) = m.UnsafePointer()
-	} else {
-		m = tmp.MapWithPtr(p)
 	}
 
 	i := 0
@@ -547,7 +545,7 @@ func (d *Decoder) DecodeMapPair(b []byte, p unsafe.Pointer, f *desc.FieldDesc, t
 	}
 	i += n
 
-	tmp.Update(m)
+	tmp.Update(tmp, p)
 	return i, nil
 }
 

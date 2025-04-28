@@ -349,24 +349,6 @@ func TestNested(t *testing.T) {
 	t.Log(f13)
 }
 
-func TestMapTmpVarsPool(t *testing.T) {
-	type S struct {
-		V int32
-	}
-	typ, err := parseType(reflect.TypeOf(map[int32]S{}))
-	assert.NoError(t, err)
-	m := map[int32]S{}
-	vars := typ.MapTmpVarsPool.Get().(*TmpMapVars)
-	*(*int32)(vars.KeyPointer()) = 1
-	*(*S)(vars.ValPointer()) = S{2}
-	vars.Update(reflect.ValueOf(m))
-	assert.MapEqual(t, map[int32]S{1: S{2}}, m)
-
-	assert.Equal(t, int32(2), (*S)(vars.ValPointer()).V)
-	vars.Reset()
-	assert.Equal(t, int32(0), (*S)(vars.ValPointer()).V)
-}
-
 type TestOneofMessage struct {
 	Int32 int32 `protobuf:"varint,1,opt"`
 
