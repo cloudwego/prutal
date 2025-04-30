@@ -52,6 +52,16 @@ func DecodeTag(v uint64) (int32, Type) {
 	return int32(uint32(v >> 3)), Type(v & 0b111)
 }
 
+// AppendKeyTag ... faster version of AppendVarint(b, EncodeTag(1, t))
+func AppendKeyTag(b []byte, t Type) []byte {
+	return append(b, byte(1)<<3|byte(t))
+}
+
+// AppendValTag ... faster version of AppendVarint(b, EncodeTag(2, t))
+func AppendValTag(b []byte, t Type) []byte {
+	return append(b, byte(2)<<3|byte(t))
+}
+
 type CoderType int8
 
 const ( // used for coder func mapping

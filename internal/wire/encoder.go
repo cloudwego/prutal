@@ -24,6 +24,8 @@ import (
 
 type AppendFunc func(b []byte, p unsafe.Pointer) []byte
 
+type AppendRepeatedFunc func(b []byte, id int32, p unsafe.Pointer) []byte
+
 var appendFuncs = map[CoderType]AppendFunc{
 	CoderVarint32: UnsafeAppendVarintU32,
 	CoderVarint64: UnsafeAppendVarintU64,

@@ -18,9 +18,7 @@ package wire
 
 import "unsafe"
 
-type AppendListFunc func(b []byte, id int32, p unsafe.Pointer) []byte
-
-var appendListFuncs = map[CoderType]AppendListFunc{
+var appendListFuncs = map[CoderType]AppendRepeatedFunc{
 	CoderVarint32: UnsafeAppendVarintU32List,
 	CoderVarint64: UnsafeAppendVarintU64List,
 	CoderZigZag32: UnsafeAppendZigZag32List,
@@ -32,7 +30,7 @@ var appendListFuncs = map[CoderType]AppendListFunc{
 	CoderString:   UnsafeAppendStringList,
 }
 
-func GetAppendListFunc(t CoderType) AppendListFunc {
+func GetAppendListFunc(t CoderType) AppendRepeatedFunc {
 	return appendListFuncs[t]
 }
 

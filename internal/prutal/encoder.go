@@ -75,100 +75,50 @@ func (e *Encoder) AppendStruct(b []byte, base unsafe.Pointer, s *desc.StructDesc
 			p = *(*unsafe.Pointer)(p) // dereference
 		}
 
-		if !f.Repeated && f.AppendFunc != nil { // scalar types without `repeated`
+		// Scalar fields
+		if !f.Repeated && f.AppendFunc != nil {
+			// scalar types without `repeated`
 			b = wire.AppendVarint(b, wire.EncodeTag(f.ID, f.WireType))
 			b = f.AppendFunc(b, p)
 			continue
 		}
 
+		// List fields
 		if f.IsList {
-			// fast path for packed list
 			if f.Packed {
+				// fast path for using funcs in wire package
 				b = wire.AppendVarint(b, wire.EncodeTag(f.ID, wire.TypeBytes))
 				b = f.AppendFunc(b, p)
-				continue
-			}
-			// fast path for repeated list except struct
-			if f.AppendRepeated != nil {
+			} else if f.AppendRepeated != nil {
+				// fast path for using funcs in wire package
 				b = f.AppendRepeated(b, f.ID, p)
-				continue
-			}
-
-			// pb doesn't support nested slice or map, can only be struct
-			vt := t.V
-			s := vt.S
-			if vt.IsPointer {
-				s = vt.V.S
-			}
-			if s == nil {
-				panic("[BUG] not struct")
-			}
-
-			h := (*hack.SliceHeader)(p)
-			p = h.Data
-			for i := 0; i < h.Len; i++ {
-				if i != 0 {
-					p = unsafe.Add(p, vt.Size)
-				}
-				b = wire.AppendVarint(b, wire.EncodeTag(f.ID, f.WireType))
-				base := p
-				if vt.IsPointer {
-					base = *(*unsafe.Pointer)(p)
-				}
-				b, err = e.AppendStruct(b, base, s, true, maxdepth-1)
+			} else {
+				b, err = e.AppendListField(b, f, p, maxdepth)
 				if err != nil {
 					return b, err
 				}
 			}
 			continue
-		} // end of list field
+		}
 
+		// Map fields
 		if f.IsMap {
-			tmp := t.MapTmpVarsPool.Get().(*desc.TmpMapVars)
-			m := tmp.MapWithPtr(p)
-			vt := t.V
-			it := hack.NewMapIter(m)
-			for {
-				kp, vp := it.Next()
-				if kp == nil {
-					break
+			if f.AppendRepeated != nil {
+				// fast path for using funcs in wire package
+				b = f.AppendRepeated(b, f.ID, p)
+			} else {
+				b, err = e.AppendMapField(b, f, p, maxdepth)
+				if err != nil {
+					return b, err
 				}
-				// LEN for each map record
-				b = wire.AppendVarint(b, wire.EncodeTag(f.ID, wire.TypeBytes))
-				b = wire.LenReserve(b)
-				beforesz := len(b)
-
-				// Key
-				b = wire.AppendVarint(b, wire.EncodeTag(1, f.KeyWireType))
-				b = f.KeyAppendFunc(b, kp)
-
-				// Val
-				b = wire.AppendVarint(b, wire.EncodeTag(2, f.ValWireType))
-				if f.ValAppendFunc != nil {
-					b = f.ValAppendFunc(b, vp)
-				} else {
-					s := vt.S
-					if vt.IsPointer { // likely it's a pointer for struct
-						s = vt.V.S
-						vp = *(*unsafe.Pointer)(vp)
-					}
-					b, err = e.AppendStruct(b, vp, s, true, maxdepth-1)
-					if err != nil {
-						return b, err
-					}
-				}
-
-				b = wire.LenPack(b, len(b)-beforesz)
 			}
-			t.MapTmpVarsPool.Put(tmp)
 			continue
-		} // end of map field
+		}
 
-		// case Struct
+		// Struct fields
 		if t.Kind != reflect.Struct {
 			panic("[BUG] not struct") // assert reflect.Struct
 		}
-
 		b = wire.AppendVarint(b, wire.EncodeTag(f.ID, f.WireType))
 		b, err = e.AppendStruct(b, p, t.S, true, maxdepth-1)
 		if err != nil {
@@ -184,6 +134,79 @@ func (e *Encoder) AppendStruct(b []byte, base unsafe.Pointer, s *desc.StructDesc
 	if encodeLen {
 		b = wire.LenPack(b, len(b)-beforeStructSize)
 	}
+	return b, nil
+}
+
+func (e *Encoder) AppendListField(b []byte, f *desc.FieldDesc, p unsafe.Pointer, maxdepth int) (_ []byte, err error) {
+	// pb doesn't support nested slice or map, can only be struct
+	t := f.T
+	vt := t.V
+	s := vt.S
+	if vt.IsPointer {
+		s = vt.V.S
+	}
+	if s == nil {
+		panic("[BUG] not struct")
+	}
+
+	h := (*hack.SliceHeader)(p)
+	p = h.Data
+	for i := 0; i < h.Len; i++ {
+		if i != 0 {
+			p = unsafe.Add(p, vt.Size)
+		}
+		b = wire.AppendVarint(b, wire.EncodeTag(f.ID, f.WireType))
+		base := p
+		if vt.IsPointer {
+			base = *(*unsafe.Pointer)(p)
+		}
+		b, err = e.AppendStruct(b, base, s, true, maxdepth-1)
+		if err != nil {
+			break
+		}
+	}
+	return b, err
+}
+
+func (e *Encoder) AppendMapField(b []byte, f *desc.FieldDesc, p unsafe.Pointer, maxdepth int) (_ []byte, err error) {
+	t := f.T
+	tmp := t.MapTmpVarsPool.Get().(*desc.TmpMapVars)
+	m := tmp.MapWithPtr(p)
+	vt := t.V
+	it := hack.NewMapIter(m)
+	tag := wire.EncodeTag(f.ID, wire.TypeBytes)
+	for {
+		kp, vp := it.Next()
+		if kp == nil {
+			break
+		}
+		// LEN for each map record
+		b = wire.AppendVarint(b, tag)
+		b = wire.LenReserve(b)
+		beforesz := len(b)
+
+		// Key
+		b = wire.AppendKeyTag(b, f.KeyWireType)
+		b = f.KeyAppendFunc(b, kp)
+
+		// Val
+		b = wire.AppendValTag(b, f.ValWireType)
+		if f.ValAppendFunc != nil {
+			b = f.ValAppendFunc(b, vp)
+		} else {
+			s := vt.S
+			if vt.IsPointer { // likely it's a pointer for struct
+				s = vt.V.S
+				vp = *(*unsafe.Pointer)(vp)
+			}
+			b, err = e.AppendStruct(b, vp, s, true, maxdepth-1)
+			if err != nil {
+				break
+			}
+		}
+		b = wire.LenPack(b, len(b)-beforesz)
+	}
+	t.MapTmpVarsPool.Put(tmp)
 	return b, nil
 }
 
