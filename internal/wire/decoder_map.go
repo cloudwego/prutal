@@ -25,7 +25,7 @@ import (
 
 func init() {
 	register := func(k, v CoderType, f DecodeFunc) {
-		mapDecoderFuncs[MapDecoderFuncKey{K: k, V: v}] = f
+		mapDecoderFuncs[mapDecoderFuncKey{K: k, V: v}] = f
 	}
 	register(CoderVarint32, CoderVarint32, DecodeMap_VarintU32_VarintU32)
 	register(CoderVarint32, CoderVarint64, DecodeMap_VarintU32_VarintU64)

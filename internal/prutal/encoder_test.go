@@ -211,7 +211,7 @@ type TestStructSimple struct {
 }
 
 type TestStruct_Benchmark_Map_Struct struct {
-	Int64Struct map[int64]TestStructSimple `protobuf:"bytes,69,rep" protobuf_key:"fixed64,1,opt" protobuf_val:"bytes,2,opt"`
+	Int64Struct map[int64]*TestStructSimple `protobuf:"bytes,69,rep" protobuf_key:"fixed64,1,opt" protobuf_val:"bytes,2,opt"`
 }
 
 func Benchmark_Encode_Map_Struct(b *testing.B) {

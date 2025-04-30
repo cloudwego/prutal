@@ -20,12 +20,12 @@ import "unsafe"
 
 type DecodeFunc func([]byte, unsafe.Pointer) error
 
-type MapDecoderFuncKey struct {
+type mapDecoderFuncKey struct {
 	K, V CoderType
 }
 
 var (
-	mapDecoderFuncs    = map[MapDecoderFuncKey]DecodeFunc{}
+	mapDecoderFuncs    = map[mapDecoderFuncKey]DecodeFunc{}
 	packedDecoderFuncs = map[CoderType]DecodeFunc{}
 )
 
@@ -34,5 +34,5 @@ func GetPackedDecoderFunc(c CoderType) DecodeFunc {
 }
 
 func GetMapDecoderFunc(k, v CoderType) DecodeFunc {
-	return mapDecoderFuncs[MapDecoderFuncKey{K: k, V: v}]
+	return mapDecoderFuncs[mapDecoderFuncKey{K: k, V: v}]
 }
