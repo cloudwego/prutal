@@ -171,6 +171,8 @@ func Benchmark_Encode_Map_Scalar(b *testing.B) {
 	p := &TestStruct_Benchmark_Map_Scalar{}
 	oo := testutils.DefaultFillOptions()
 	oo.Seed = 12345
+	oo.MapMinSize = 50
+	oo.MapMaxSize = 50
 	testutils.RandFill(p, oo)
 
 	buf := make([]byte, 0, 16<<10)
@@ -191,6 +193,7 @@ func Benchmark_Encode_Map_String(b *testing.B) {
 	p := &TestStruct_Benchmark_Map_String{}
 	oo := testutils.DefaultFillOptions()
 	oo.Seed = 12345
+	oo.MapMinSize = 100
 	oo.MapMaxSize = 100
 	oo.StringMaxLen = 20
 	testutils.RandFill(p, oo)
@@ -215,6 +218,7 @@ func Benchmark_Encode_Map_Struct(b *testing.B) {
 	p := &TestStruct_Benchmark_Map_Struct{}
 	oo := testutils.DefaultFillOptions()
 	oo.Seed = 12345
+	oo.MapMinSize = 100
 	oo.MapMaxSize = 100
 	testutils.RandFill(p, oo)
 
