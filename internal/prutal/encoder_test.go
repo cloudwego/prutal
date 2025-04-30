@@ -77,8 +77,9 @@ func Benchmark_Encode_List_Packed(b *testing.B) {
 		PackedZigZag32: testutils.Repeat(50, rand.Int31()),
 		PackedZigZag64: testutils.Repeat(50, rand.Int63()),
 	}
-
 	buf := make([]byte, 0, 16<<10)
+
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, _ = MarshalAppend(buf[:0], p)
 	}
@@ -116,8 +117,9 @@ func Benchmark_Encode_List_NoPack(b *testing.B) {
 		PackedZigZag32: testutils.Repeat(50, rand.Int31()),
 		PackedZigZag64: testutils.Repeat(50, rand.Int63()),
 	}
-
 	buf := make([]byte, 0, 16<<10)
+
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, _ = MarshalAppend(buf[:0], p)
 	}
@@ -141,8 +143,84 @@ func Benchmark_Encode_String(b *testing.B) {
 		S5: testutils.RandomStr(400),
 		SS: testutils.Repeat(100, "helloworld"),
 	}
+	buf := make([]byte, 0, 16<<10)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = MarshalAppend(buf[:0], p)
+	}
+}
+
+type TestStruct_Benchmark_Map_Scalar struct {
+	Int32Int32       map[int32]int32   `protobuf:"bytes,56,rep" protobuf_key:"varint,1,opt" protobuf_val:"varint,2,opt"`
+	Int64Int64       map[int64]int64   `protobuf:"bytes,57,rep" protobuf_key:"varint,1,opt" protobuf_val:"varint,2,opt"`
+	Uint32Uint32     map[uint32]uint32 `protobuf:"bytes,58,rep" protobuf_key:"varint,1,opt" protobuf_val:"varint,2,opt"`
+	Uint64Uint64     map[uint64]uint64 `protobuf:"bytes,59,rep" protobuf_key:"varint,1,opt" protobuf_val:"varint,2,opt"`
+	Sint32Sint32     map[int32]int32   `protobuf:"bytes,60,rep" protobuf_key:"zigzag32,1,opt" protobuf_val:"zigzag32,2,opt"`
+	Sint64Sint64     map[int64]int64   `protobuf:"bytes,61,rep" protobuf_key:"zigzag64,1,opt" protobuf_val:"zigzag64,2,opt"`
+	Fixed32Fixed32   map[uint32]uint32 `protobuf:"bytes,62,rep" protobuf_key:"fixed32,1,opt" protobuf_val:"fixed32,2,opt"`
+	Fixed64Fixed64   map[uint64]uint64 `protobuf:"bytes,63,rep" protobuf_key:"fixed64,1,opt" protobuf_val:"fixed64,2,opt"`
+	Sfixed32Sfixed32 map[int32]int32   `protobuf:"bytes,64,rep" protobuf_key:"fixed32,1,opt" protobuf_val:"fixed32,2,opt"`
+	Sfixed64Sfixed64 map[int64]int64   `protobuf:"bytes,65,rep" protobuf_key:"fixed64,1,opt" protobuf_val:"fixed64,2,opt"`
+	Int32Float       map[int32]float32 `protobuf:"bytes,66,rep" protobuf_key:"varint,1,opt" protobuf_val:"fixed32,2,opt"`
+	Int32Double      map[int32]float64 `protobuf:"bytes,67,rep" protobuf_key:"varint,1,opt" protobuf_val:"fixed64,2,opt"`
+	BoolBool         map[bool]bool     `protobuf:"bytes,68,rep" protobuf_key:"varint,1,opt" protobuf_val:"varint,2,opt"`
+}
+
+func Benchmark_Encode_Map_Scalar(b *testing.B) {
+	p := &TestStruct_Benchmark_Map_Scalar{}
+	oo := testutils.DefaultFillOptions()
+	oo.Seed = 12345
+	testutils.RandFill(p, oo)
 
 	buf := make([]byte, 0, 16<<10)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = MarshalAppend(buf[:0], p)
+	}
+
+}
+
+type TestStruct_Benchmark_Map_String struct {
+	StringString map[string]string `protobuf:"bytes,69,rep" protobuf_key:"bytes,1,opt" protobuf_val:"bytes,2,opt"`
+	StringBytes  map[string][]byte `protobuf:"bytes,70,rep" protobuf_key:"bytes,1,opt" protobuf_val:"bytes,2,opt"`
+}
+
+func Benchmark_Encode_Map_String(b *testing.B) {
+	p := &TestStruct_Benchmark_Map_String{}
+	oo := testutils.DefaultFillOptions()
+	oo.Seed = 12345
+	oo.MapMaxSize = 100
+	oo.StringMaxLen = 20
+	testutils.RandFill(p, oo)
+
+	buf := make([]byte, 0, 16<<10)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = MarshalAppend(buf[:0], p)
+	}
+}
+
+type TestStructSimple struct {
+	Int64 int64 `protobuf:"fixed64,1,opt"`
+}
+
+type TestStruct_Benchmark_Map_Struct struct {
+	Int64Struct map[int64]TestStructSimple `protobuf:"bytes,69,rep" protobuf_key:"fixed64,1,opt" protobuf_val:"bytes,2,opt"`
+}
+
+func Benchmark_Encode_Map_Struct(b *testing.B) {
+	p := &TestStruct_Benchmark_Map_Struct{}
+	oo := testutils.DefaultFillOptions()
+	oo.Seed = 12345
+	oo.MapMaxSize = 100
+	testutils.RandFill(p, oo)
+
+	buf := make([]byte, 0, 8<<10)
+
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, _ = MarshalAppend(buf[:0], p)
 	}
