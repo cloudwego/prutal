@@ -19,7 +19,6 @@ package prutalgen
 import (
 	"go/format"
 	"os"
-	"path"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -64,7 +63,7 @@ func (g *GoCodeGen) SourcePath(p *Proto, gt GenPathType, out string, suffix stri
 	switch gt {
 	case GenByImport:
 		// same name as proto file
-		fn = strings.TrimSuffix(path.Base(p.ProtoFile), ".proto") + suffix
+		fn = strings.TrimSuffix(filepath.Base(p.ProtoFile), ".proto") + suffix
 		// file path uses import path
 		fn = filepath.Join(out, fullFilename(p.GoImport, fn))
 
