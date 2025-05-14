@@ -19,7 +19,6 @@ package prutalgen
 import (
 	"fmt"
 	"path"
-	"path/filepath"
 	"strings"
 
 	"github.com/cloudwego/prutal/prutalgen/internal/parser"
@@ -206,9 +205,6 @@ func (x *protoLoader) ExitImportStatement(c *parser.ImportStatementContext) {
 	if err != nil {
 		x.Fatalf("%s - import syntax err: %s", getTokenPos(c), err)
 	}
-	// protoc internal proto
-	if filepath.Base(importpath) != "prutal.proto" {
-		imp.Proto = x.loadProto(importpath)
-		p.Imports = append(p.Imports, imp)
-	}
+	imp.Proto = x.loadProto(importpath)
+	p.Imports = append(p.Imports, imp)
 }
