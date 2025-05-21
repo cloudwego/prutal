@@ -79,8 +79,6 @@ func GetOrParse(rv reflect.Value) (*StructDesc, error) {
 	return s, nil
 }
 
-var bytesType = reflect.TypeOf([]byte{})
-
 const maxDirectFieldMapID = 1000
 
 type StructDesc struct {
@@ -159,11 +157,11 @@ type FieldDesc struct {
 	Required bool
 	Repeated bool
 	Packed   bool
-	TagType  TagType
-	WireType wire.Type
+	IsList   bool
+	IsMap    bool
 
-	IsList bool
-	IsMap  bool
+	TagType TagType
+	WireTag uint64 //  wire.EncodeTag(f.ID, wireType)
 
 	// only for oneof types
 	// Kind==reflect.Pointer, coz we always use pointer for checking
@@ -171,10 +169,10 @@ type FieldDesc struct {
 	IfaceTab  uintptr // from OneofFieldIfaceTab
 
 	// only for scalar types (including packed scalar types)
-	AppendFunc func(b []byte, p unsafe.Pointer) []byte
+	AppendFunc wire.AppendFunc
 
 	// only for list or map scalar types
-	AppendRepeated func(b []byte, id int32, p unsafe.Pointer) []byte
+	AppendRepeated wire.AppendRepeatedFunc
 
 	// only for map type
 	KeyType TagType
@@ -183,8 +181,8 @@ type FieldDesc struct {
 	KeyWireType wire.Type
 	ValWireType wire.Type
 
-	KeyAppendFunc func(b []byte, p unsafe.Pointer) []byte
-	ValAppendFunc func(b []byte, p unsafe.Pointer) []byte
+	KeyAppendFunc wire.AppendFunc
+	ValAppendFunc wire.AppendFunc
 
 	// only for packed types, and some map types
 	DecodeFunc func(b []byte, p unsafe.Pointer) error
@@ -239,7 +237,10 @@ func (f *FieldDesc) finalizeField() (err error) {
 		f.ValAppendFunc = getAppendFunc(f.ValType, t.V.RealKind(), false)
 	}
 	if f.IsList {
-		f.AppendRepeated = getAppendListFunc(f.TagType, t.RealKind())
+		f.AppendRepeated = getAppendListFunc(f)
+	}
+	if f.IsMap {
+		f.AppendRepeated = getAppendMapFunc(f)
 	}
 	f.DecodeFunc = getDecodeFunc(f)
 	return

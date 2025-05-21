@@ -18,7 +18,6 @@ package desc
 
 import (
 	"reflect"
-	"unsafe"
 
 	"github.com/cloudwego/prutal/internal/wire"
 )
@@ -72,8 +71,8 @@ func getPackedDecodeFunc(f *FieldDesc) wire.DecodeFunc {
 }
 
 func getMapDecodeFunc(f *FieldDesc) wire.DecodeFunc {
-	kt := getCoderType(f.KeyType, dereferenceTypeKind(f.T.K.T))
-	vt := getCoderType(f.ValType, dereferenceTypeKind(f.T.V.T))
+	kt := getCoderType(f.KeyType, reflectTypeKind(f.T.K.T))
+	vt := getCoderType(f.ValType, reflectTypeKind(f.T.V.T))
 	return wire.GetMapDecoderFunc(kt, vt)
 }
 
@@ -81,20 +80,14 @@ func dereferenceTypeKind(t reflect.Type) reflect.Kind {
 	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
-	if t == bytesType {
-		return KindBytes
-	}
-	return t.Kind()
+	return reflectTypeKind(t)
 }
 
 func dereferenceElemKind(t reflect.Type) reflect.Kind {
 	for t.Kind() == reflect.Pointer || t.Kind() == reflect.Slice {
 		t = t.Elem()
 	}
-	if t == bytesType {
-		return KindBytes
-	}
-	return t.Kind()
+	return reflectTypeKind(t)
 }
 
 func getAppendFunc(t TagType, k reflect.Kind, packed bool) wire.AppendFunc {
@@ -102,7 +95,14 @@ func getAppendFunc(t TagType, k reflect.Kind, packed bool) wire.AppendFunc {
 	return wire.GetAppendFunc(c, packed)
 }
 
-func getAppendListFunc(t TagType, k reflect.Kind) func(b []byte, id int32, p unsafe.Pointer) []byte {
+func getAppendListFunc(f *FieldDesc) wire.AppendRepeatedFunc {
+	t, k := f.TagType, f.T.RealKind()
 	c := getCoderType(t, k)
 	return wire.GetAppendListFunc(c)
+}
+
+func getAppendMapFunc(f *FieldDesc) wire.AppendRepeatedFunc {
+	kt := getCoderType(f.KeyType, reflectTypeKind(f.T.K.T))
+	vt := getCoderType(f.ValType, reflectTypeKind(f.T.V.T))
+	return wire.GetMapEncoderFunc(kt, vt)
 }

@@ -28,6 +28,15 @@ import (
 
 const KindBytes reflect.Kind = 5000 // for []byte
 
+var bytesType = reflect.TypeOf([]byte{})
+
+func reflectTypeKind(t reflect.Type) reflect.Kind {
+	if t == bytesType {
+		return KindBytes // special case
+	}
+	return t.Kind()
+}
+
 type Type struct {
 	T reflect.Type
 
@@ -112,10 +121,7 @@ func parseType(rt reflect.Type) (t *Type, err error) {
 	t.Kind = rt.Kind()
 	t.Size = rt.Size()
 	t.Align = rt.Align()
-
-	if rt == bytesType { // special case
-		t.Kind = KindBytes
-	}
+	t.Kind = reflectTypeKind(rt)
 
 	switch t.Kind {
 	case reflect.Ptr, reflect.Slice, KindBytes, reflect.String,
@@ -177,6 +183,7 @@ type TmpMapVars struct {
 	z reflect.Value
 
 	Update func(p *TmpMapVars, mp unsafe.Pointer) // see newTmpMapVarsFunc
+
 }
 
 func (p *TmpMapVars) MapWithPtr(x unsafe.Pointer) reflect.Value {
