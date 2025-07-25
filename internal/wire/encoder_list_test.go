@@ -30,7 +30,7 @@ func TestUnsafeAppendVarintU64List(t *testing.T) {
 	b0 := p.AppendVarintField(1, vv[0]).
 		AppendVarintField(1, vv[1]).
 		AppendVarintField(1, vv[2]).Bytes()
-	b1 := UnsafeAppendVarintU64List(nil, 1, unsafe.Pointer(&vv))
+	b1 := UnsafeAppendVarintU64List(nil, EncodeTag(1, TypeVarint), unsafe.Pointer(&vv))
 	assert.BytesEqual(t, b0, b1)
 }
 
@@ -40,7 +40,7 @@ func TestUnsafeAppendVarintU32List(t *testing.T) {
 	b0 := p.AppendVarintField(1, uint64(vv[0])).
 		AppendVarintField(1, uint64(vv[1])).
 		AppendVarintField(1, uint64(vv[2])).Bytes()
-	b1 := UnsafeAppendVarintU32List(nil, 1, unsafe.Pointer(&vv))
+	b1 := UnsafeAppendVarintU32List(nil, EncodeTag(1, TypeVarint), unsafe.Pointer(&vv))
 	assert.BytesEqual(t, b0, b1)
 }
 
@@ -50,7 +50,7 @@ func TestUnsafeAppendZigZag64List(t *testing.T) {
 	b0 := p.AppendZigZagField(1, vv[0]).
 		AppendZigZagField(1, vv[1]).
 		AppendZigZagField(1, vv[2]).Bytes()
-	b1 := UnsafeAppendZigZag64List(nil, 1, unsafe.Pointer(&vv))
+	b1 := UnsafeAppendZigZag64List(nil, EncodeTag(1, TypeVarint), unsafe.Pointer(&vv))
 	assert.BytesEqual(t, b0, b1)
 }
 
@@ -60,7 +60,7 @@ func TestUnsafeAppendZigZag32List(t *testing.T) {
 	b0 := p.AppendZigZagField(1, int64(vv[0])).
 		AppendZigZagField(1, int64(vv[1])).
 		AppendZigZagField(1, int64(vv[2])).Bytes()
-	b1 := UnsafeAppendZigZag32List(nil, 1, unsafe.Pointer(&vv))
+	b1 := UnsafeAppendZigZag32List(nil, EncodeTag(1, TypeVarint), unsafe.Pointer(&vv))
 	assert.BytesEqual(t, b0, b1)
 }
 
@@ -70,7 +70,7 @@ func TestUnsafeAppendFixed64List(t *testing.T) {
 	b0 := p.AppendFixed64Field(1, vv[0]).
 		AppendFixed64Field(1, vv[1]).
 		AppendFixed64Field(1, vv[2]).Bytes()
-	b1 := UnsafeAppendFixed64List(nil, 1, unsafe.Pointer(&vv))
+	b1 := UnsafeAppendFixed64List(nil, EncodeTag(1, TypeFixed64), unsafe.Pointer(&vv))
 	assert.BytesEqual(t, b0, b1)
 }
 
@@ -80,7 +80,7 @@ func TestUnsafeAppendFixed32List(t *testing.T) {
 	b0 := p.AppendFixed32Field(1, vv[0]).
 		AppendFixed32Field(1, vv[1]).
 		AppendFixed32Field(1, vv[2]).Bytes()
-	b1 := UnsafeAppendFixed32List(nil, 1, unsafe.Pointer(&vv))
+	b1 := UnsafeAppendFixed32List(nil, EncodeTag(1, TypeFixed32), unsafe.Pointer(&vv))
 	assert.BytesEqual(t, b0, b1)
 }
 
@@ -90,7 +90,7 @@ func TestUnsafeAppendBool(t *testing.T) {
 		1 << 3, 1,
 		1 << 3, 0,
 		1 << 3, 1}
-	b1 := UnsafeAppendBoolList(nil, 1, unsafe.Pointer(&vv))
+	b1 := UnsafeAppendBoolList(nil, EncodeTag(1, TypeVarint), unsafe.Pointer(&vv))
 	assert.BytesEqual(t, b0, b1)
 }
 
@@ -100,7 +100,7 @@ func TestUnsafeAppendStringList(t *testing.T) {
 	b0 := p.AppendStringField(1, vv[0]).
 		AppendStringField(1, vv[1]).
 		AppendStringField(1, vv[2]).Bytes()
-	b1 := UnsafeAppendStringList(nil, 1, unsafe.Pointer(&vv))
+	b1 := UnsafeAppendStringList(nil, EncodeTag(1, TypeBytes), unsafe.Pointer(&vv))
 	assert.BytesEqual(t, b0, b1)
 }
 
@@ -110,6 +110,6 @@ func TestUnsafeAppendBytesList(t *testing.T) {
 	b0 := p.AppendBytesField(1, vv[0]).
 		AppendBytesField(1, vv[1]).
 		AppendBytesField(1, vv[2]).Bytes()
-	b1 := UnsafeAppendBytesList(nil, 1, unsafe.Pointer(&vv))
+	b1 := UnsafeAppendBytesList(nil, EncodeTag(1, TypeBytes), unsafe.Pointer(&vv))
 	assert.BytesEqual(t, b0, b1)
 }

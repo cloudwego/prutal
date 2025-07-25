@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/cloudwego/prutal/internal/wire"
 )
 
 var errGroupNotSupported = errors.New("group encoding not supported")
@@ -66,7 +68,11 @@ func (p *FieldDesc) parseStructTag(tag string) error {
 	if p.TagType == 0 {
 		return errors.New("unknown tag type")
 	}
-	p.WireType = wireTypes[p.TagType]
+	if p.Packed {
+		p.WireTag = wire.EncodeTag(p.ID, wire.TypeBytes)
+	} else {
+		p.WireTag = wire.EncodeTag(p.ID, wireTypes[p.TagType])
+	}
 	return nil
 }
 

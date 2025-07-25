@@ -37,7 +37,7 @@ func TestNested(t *testing.T) {
 
 	// use prutal to decode
 	p0 := &TestMessageA{}
-	err = proto.Unmarshal(bs, p0)
+	err = prutal.Unmarshal(bs, p0)
 	assert.NoError(t, err)
 	assert.DeepEqual(t, p, p0)
 

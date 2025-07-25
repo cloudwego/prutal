@@ -265,11 +265,20 @@ func (d *Decoder) DecodeStruct(b []byte, base unsafe.Pointer, s *desc.StructDesc
 					*(*string)(p) = ""
 				}
 			case reflect.Map:
-				if f.DecodeFunc != nil { // fast path for using docoders in wire pkg
+				// Fast path: use specialized decoders from wire package for primitive key-value pairs
+				// These are pre-generated functions optimized for specific map types (e.g., map[uint32]int64)
+				// Available for numeric/bool keys with numeric/bool values only
+				if f.DecodeFunc != nil {
 					if err := f.DecodeFunc(fb, p); err != nil {
 						return i, err
 					}
 				} else {
+					// Fallback: use generic reflection-based map decoding
+					// Used for:
+					// - String keys (most common case: map[string]T)
+					// - Complex values: structs/messages (map[K]*MyMessage)
+					// - Bytes values (map[K][]byte)
+					// - String values when key is string (map[string]string)
 					if tmv == nil {
 						tmv = f.T.MapTmpVarsPool.Get().(*desc.TmpMapVars)
 					}

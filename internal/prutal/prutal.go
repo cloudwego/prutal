@@ -40,8 +40,10 @@ func MarshalAppend(b []byte, v interface{}) ([]byte, error) {
 			return nil, err
 		}
 	}
-	enc := Encoder{}
-	return enc.AppendStruct(b, rv.UnsafePointer(), s, false, defaultRecursionMaxDepth)
+	enc := encoderPool.Get().(*Encoder)
+	b, err := enc.AppendStruct(b, rv.UnsafePointer(), s, false, defaultRecursionMaxDepth)
+	encoderPool.Put(enc)
+	return b, err
 }
 
 func Unmarshal(b []byte, v interface{}) error {

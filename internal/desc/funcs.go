@@ -18,7 +18,6 @@ package desc
 
 import (
 	"reflect"
-	"unsafe"
 
 	"github.com/cloudwego/prutal/internal/wire"
 )
@@ -56,13 +55,19 @@ func getCoderType(t TagType, kd reflect.Kind) wire.CoderType {
 	return wire.CoderUnknown
 }
 
+// getDecodeFunc returns optimized decode functions for specific field types.
+// Returns nil for fields that should use generic reflection-based decoding.
 func getDecodeFunc(f *FieldDesc) wire.DecodeFunc {
 	if f.IsMap {
+		// Returns optimized decoder for maps with primitive types
+		// Returns nil for maps with complex types (e.g., struct values, nested maps)
 		return getMapDecodeFunc(f)
 	}
 	if f.Packed {
+		// Returns optimized decoder for packed repeated scalar fields
 		return getPackedDecodeFunc(f)
 	}
+	// Non-packed, non-map fields use generic decoding
 	return nil
 }
 
@@ -71,9 +76,23 @@ func getPackedDecodeFunc(f *FieldDesc) wire.DecodeFunc {
 	return wire.GetPackedDecoderFunc(c)
 }
 
+// getMapDecodeFunc returns optimized decoder functions for map fields.
+// Only returns a function if BOTH key and value types have optimized decoders.
+//
+// Optimized decoders are available for:
+// - Keys: int32, uint32, int64, uint64, sint32, sint64, fixed32, fixed64, sfixed32, sfixed64, bool
+// - Values: All key types above (scalar types only)
+//
+// Returns nil (uses fallback) for:
+// - String keys (map[string]T)
+// - Bytes values (map[K][]byte)
+// - String values (map[K]string) when K is string
+// - Struct/Message values (map[K]Message or map[K]*Message)
+// - Any other complex value types
 func getMapDecodeFunc(f *FieldDesc) wire.DecodeFunc {
-	kt := getCoderType(f.KeyType, dereferenceTypeKind(f.T.K.T))
-	vt := getCoderType(f.ValType, dereferenceTypeKind(f.T.V.T))
+	kt := getCoderType(f.KeyType, reflectTypeKind(f.T.K.T))
+	vt := getCoderType(f.ValType, reflectTypeKind(f.T.V.T))
+	// GetMapDecoderFunc returns nil if no optimized decoder exists for the key-value pair
 	return wire.GetMapDecoderFunc(kt, vt)
 }
 
@@ -81,20 +100,14 @@ func dereferenceTypeKind(t reflect.Type) reflect.Kind {
 	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
-	if t == bytesType {
-		return KindBytes
-	}
-	return t.Kind()
+	return reflectTypeKind(t)
 }
 
 func dereferenceElemKind(t reflect.Type) reflect.Kind {
 	for t.Kind() == reflect.Pointer || t.Kind() == reflect.Slice {
 		t = t.Elem()
 	}
-	if t == bytesType {
-		return KindBytes
-	}
-	return t.Kind()
+	return reflectTypeKind(t)
 }
 
 func getAppendFunc(t TagType, k reflect.Kind, packed bool) wire.AppendFunc {
@@ -102,7 +115,14 @@ func getAppendFunc(t TagType, k reflect.Kind, packed bool) wire.AppendFunc {
 	return wire.GetAppendFunc(c, packed)
 }
 
-func getAppendListFunc(t TagType, k reflect.Kind) func(b []byte, id int32, p unsafe.Pointer) []byte {
+func getAppendListFunc(f *FieldDesc) wire.AppendRepeatedFunc {
+	t, k := f.TagType, f.T.RealKind()
 	c := getCoderType(t, k)
 	return wire.GetAppendListFunc(c)
+}
+
+func getAppendMapFunc(f *FieldDesc) wire.AppendRepeatedFunc {
+	kt := getCoderType(f.KeyType, reflectTypeKind(f.T.K.T))
+	vt := getCoderType(f.ValType, reflectTypeKind(f.T.V.T))
+	return wire.GetMapEncoderFunc(kt, vt)
 }

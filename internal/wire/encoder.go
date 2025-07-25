@@ -24,6 +24,8 @@ import (
 
 type AppendFunc func(b []byte, p unsafe.Pointer) []byte
 
+type AppendRepeatedFunc func(b []byte, tag uint64, p unsafe.Pointer) []byte
+
 var appendFuncs = map[CoderType]AppendFunc{
 	CoderVarint32: UnsafeAppendVarintU32,
 	CoderVarint64: UnsafeAppendVarintU64,
@@ -51,6 +53,28 @@ func AppendVarint(b []byte, v uint64) []byte {
 		v >>= 7
 	}
 	return append(b, byte(v))
+}
+
+func AppendVarintSmall(b []byte, v uint64) []byte {
+	switch {
+	case v < 1<<7:
+		return append(b, byte(v))
+	case v < 1<<14:
+		return append(b,
+			byte((v>>0)&0x7f|0x80),
+			byte(v>>7))
+	case v < 1<<21:
+		return append(b,
+			byte((v>>0)&0x7f|0x80),
+			byte((v>>7)&0x7f|0x80),
+			byte(v>>14))
+	default:
+		for v >= 0x80 {
+			b = append(b, byte(v)|0x80)
+			v >>= 7
+		}
+		return append(b, byte(v))
+	}
 }
 
 func UnsafeAppendVarintU64(b []byte, p unsafe.Pointer) []byte {
