@@ -56,11 +56,11 @@ func (e *Encoder) AppendStruct(b []byte, base unsafe.Pointer, s *desc.StructDesc
 		t := f.T
 
 		if f.IsOneof() {
-			typ, data := hack.ExtratIface(p)
+			data := hack.IfaceData(p)
 			if data == nil {
 				continue
 			}
-			if hack.ReflectTypePtr(f.OneofType) != typ {
+			if hack.ReflectTypePtr(f.OneofType) != hack.IfaceTypePtr(p) {
 				continue
 			}
 			p = data
