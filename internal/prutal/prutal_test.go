@@ -1014,5 +1014,11 @@ func TestUnknownFields(t *testing.T) {
 		assert.NoError(t, err)
 		assert.BytesEqual(t, b, *p2.unknownFields)
 	}
+	{ // pointer=true, nil unknownFields, marshal should not panic
+		p3 := &TestUnknownFieldsStruct2{}
+		newb, err := MarshalAppend([]byte{}, p3)
+		assert.NoError(t, err)
+		assert.Equal(t, 0, len(newb))
+	}
 
 }
