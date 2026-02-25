@@ -327,7 +327,11 @@ func appendUnknownFields(b []byte, s *desc.StructDesc, base unsafe.Pointer) []by
 	p := unsafe.Add(base, s.UnknownFieldsOffset)
 	var x *[]byte
 	if s.UnknownFieldsPointer {
-		x = (*[]byte)(*(*unsafe.Pointer)(p))
+		pp := *(*unsafe.Pointer)(p)
+		if pp == nil {
+			return b
+		}
+		x = (*[]byte)(pp)
 	} else {
 		x = (*[]byte)(p)
 	}

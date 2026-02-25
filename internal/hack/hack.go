@@ -221,7 +221,8 @@ type itab struct {
 	typ uintptr // concrete type pointer
 }
 
-// Iface mirrors Go's internal interface{} structure for direct manipulation
+// Iface mirrors Go's internal interface{} structure for direct manipulation.
+// tab is stored as uintptr because itab is never allocated on heap, safe for GC.
 type Iface struct {
 	tab  uintptr        // pointer to itab
 	data unsafe.Pointer // pointer to actual data
