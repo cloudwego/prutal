@@ -73,17 +73,6 @@ func testhack() error {
 		}
 	}
 
-	{ // Test maplen - verify unsafe map length retrieval works correctly
-		m := map[int]string{}
-		m[8] = "world"
-		m[9] = "!"
-		m[10] = "?"
-
-		if maplen(reflect.ValueOf(m).UnsafePointer()) != 3 {
-			return errors.New("compatibility issue found: maplen")
-		}
-	}
-
 	{ // Test ReflectValueWithPtr - verify unsafe reflect.Value pointer manipulation
 		m := map[int]string{7: "hello"}
 		rv := reflect.NewAt(reflect.TypeOf(m), unsafe.Pointer(&m)).Elem()
@@ -199,17 +188,6 @@ func (m *MapIter) Next() (unsafe.Pointer, unsafe.Pointer) {
 	m.MapIter.Next()
 	p := (*hackMapIter)(unsafe.Pointer(&m.MapIter))
 	return p.hitter.k, p.hitter.v
-}
-
-// maplen returns the number of elements in a map by directly accessing the hmap structure.
-// This is faster than using reflection but bypasses race detection.
-// WARNING: Race detector will not work with this function.
-func maplen(p unsafe.Pointer) int {
-	// hmap mirrors Go's internal map structure where count is the first field
-	type hmap struct {
-		count int // count is the 1st field in Go's hmap
-	}
-	return (*hmap)(p).count
 }
 
 // rvtype mirrors the internal structure of reflect.Value for unsafe manipulation
