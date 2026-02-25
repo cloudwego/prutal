@@ -29,7 +29,7 @@ import (
 	"github.com/cloudwego/prutal/internal/wire"
 )
 
-var cache = newMapStructDesc()
+var cache = &mapStructDesc{}
 
 var (
 	parsemu      sync.Mutex

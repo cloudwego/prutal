@@ -17,12 +17,10 @@
 package prutalgen
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 
 	"github.com/cloudwego/prutal/prutalgen/internal/antlr"
 
@@ -104,21 +102,6 @@ func refPath(abs string) string {
 	return ret
 }
 
-// NOTE: This implemenation doesn't works with errors.Is/As.
-// Use errors.Join if >=go1.20
-func joinErrs(errs ...error) error {
-	if len(errs) == 0 {
-		return nil
-	}
-	if len(errs) == 1 {
-		return errs[0]
-	}
-	ss := make([]string, 0, len(errs))
-	for _, err := range errs {
-		ss = append(ss, err.Error())
-	}
-	return errors.New(strings.Join(ss, "\n"))
-}
 
 // sort protos by topological order
 func sortProtoFiles(pp []*Proto) []*Proto {

@@ -170,14 +170,8 @@ type MapIter struct {
 }
 
 // NewMapIter creates reflect.MapIter for reflect.Value.
-// for go1.18, rv.MapRange() will cause one more allocation
-// for >=go1.19, can use rv.MapRange() directly.
-// see: https://github.com/golang/go/commit/c5edd5f616b4ee4bbaefdb1579c6078e7ed7e84e
-// TODO: remove this func, and use MapIter{rv.MapRange()} when >=go1.19
 func NewMapIter(rv reflect.Value) MapIter {
-	ret := MapIter{}
-	(*hackMapIter)(unsafe.Pointer(&ret.MapIter)).m = rv
-	return ret
+	return MapIter{*rv.MapRange()}
 }
 
 // Next returns unsafe pointers to the current key and value in the map iteration.

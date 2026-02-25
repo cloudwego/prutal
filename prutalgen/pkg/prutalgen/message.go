@@ -17,6 +17,7 @@
 package prutalgen
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -157,7 +158,7 @@ func (m *Message) verify() error {
 		}
 		exists[x.FieldNumber] = true
 	}
-	return joinErrs(errs...)
+	return errors.Join(errs...)
 }
 
 func (x *protoLoader) EnterMessageDef(c *parser.MessageDefContext) {

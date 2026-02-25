@@ -17,6 +17,7 @@
 package prutalgen
 
 import (
+	"errors"
 	"fmt"
 	"path"
 	"strings"
@@ -162,7 +163,7 @@ func (p *Proto) verify() error {
 			errs = append(errs, fmt.Errorf("service %q verify err: %w", s.Name, err))
 		}
 	}
-	return joinErrs(errs...)
+	return errors.Join(errs...)
 }
 
 // listeners

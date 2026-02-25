@@ -18,13 +18,13 @@ package desc
 
 import (
 	"sync/atomic"
-	"unsafe"
 )
 
 // mapStructDesc represents a read-lock-free hashmap for *StructDesc like sync.Map.
 // it's NOT designed for writes.
+// Each slot is an atomic.Pointer so writes only reallocate the affected slot.
 type mapStructDesc struct {
-	p unsafe.Pointer // for atomic, point to hashtable
+	buckets [mapStructDescBuckets + 1]atomic.Pointer[[]mapStructDescItem]
 }
 
 // XXX: fixed size to make it simple,
@@ -36,17 +36,13 @@ type mapStructDescItem struct {
 	sd      *StructDesc
 }
 
-func newMapStructDesc() *mapStructDesc {
-	m := &mapStructDesc{}
-	buckets := make([][]mapStructDescItem, mapStructDescBuckets+1) // [0] - [0xffff]
-	atomic.StorePointer(&m.p, unsafe.Pointer(&buckets))
-	return m
-}
-
 // Get ...
 func (m *mapStructDesc) Get(abiType uintptr) *StructDesc {
-	buckets := *(*[][]mapStructDescItem)(atomic.LoadPointer(&m.p))
-	dd := buckets[abiType&mapStructDescBuckets]
+	p := m.buckets[abiType&mapStructDescBuckets].Load()
+	if p == nil {
+		return nil
+	}
+	dd := *p
 	for i := range dd {
 		if dd[i].abiType == abiType {
 			return dd[i].sd
@@ -61,10 +57,21 @@ func (m *mapStructDesc) Set(abiType uintptr, sd *StructDesc) {
 	if m.Get(abiType) == sd {
 		return
 	}
-	oldBuckets := *(*[][]mapStructDescItem)(atomic.LoadPointer(&m.p))
-	newBuckets := make([][]mapStructDescItem, len(oldBuckets))
-	copy(newBuckets, oldBuckets)
 	bk := abiType & mapStructDescBuckets
-	newBuckets[bk] = append(newBuckets[bk], mapStructDescItem{abiType: abiType, sd: sd})
-	atomic.StorePointer(&m.p, unsafe.Pointer(&newBuckets))
+	var old []mapStructDescItem
+	if p := m.buckets[bk].Load(); p != nil {
+		old = *p
+	}
+	// alloc len+1 cap upfront since append is the common path
+	ns := make([]mapStructDescItem, len(old), len(old)+1)
+	copy(ns, old)
+	for i := range ns {
+		if ns[i].abiType == abiType {
+			ns[i].sd = sd
+			m.buckets[bk].Store(&ns)
+			return
+		}
+	}
+	ns = append(ns, mapStructDescItem{abiType: abiType, sd: sd})
+	m.buckets[bk].Store(&ns)
 }

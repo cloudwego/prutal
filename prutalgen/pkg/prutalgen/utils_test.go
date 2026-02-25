@@ -17,6 +17,7 @@
 package prutalgen
 
 import (
+	"errors"
 	"io"
 	"testing"
 
@@ -30,10 +31,10 @@ func TestHasPathPrefix(t *testing.T) {
 	assert.False(t, hasPathPrefix("a", "b"))
 }
 
-func TestJoinErrs(t *testing.T) {
-	assert.NoError(t, joinErrs())
-	assert.Same(t, io.EOF, joinErrs(io.EOF))
+func TestErrorsJoin(t *testing.T) {
+	assert.NoError(t, errors.Join())
+	assert.True(t, errors.Is(errors.Join(io.EOF), io.EOF))
 	assert.Equal(t,
 		io.EOF.Error()+"\n"+io.ErrUnexpectedEOF.Error(),
-		joinErrs(io.EOF, io.ErrUnexpectedEOF).Error())
+		errors.Join(io.EOF, io.ErrUnexpectedEOF).Error())
 }

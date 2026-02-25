@@ -17,6 +17,7 @@
 package prutalgen
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -123,7 +124,7 @@ func (e *Enum) verify() error {
 		}
 		m[f.Value] = true
 	}
-	return joinErrs(errs...)
+	return errors.Join(errs...)
 }
 
 type EnumField struct {
