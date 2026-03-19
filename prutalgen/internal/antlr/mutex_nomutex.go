@@ -1,3 +1,4 @@
+//go:build antlr.nomutex
 // +build antlr.nomutex
 
 package antlr

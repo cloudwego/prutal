@@ -14,4 +14,6 @@ GITHUB_PKG="github.com/antlr4-go/antlr/v4"
 INTERNAL_PKG="github.com/cloudwego/prutal/prutalgen/internal/antlr"
 sed -i.bak "s:$GITHUB_PKG:$INTERNAL_PKG:g" ./parser/*.go && rm ./parser/*.bak
 
+gofmt -w  antlr parser
+
 echo "all done"

@@ -102,7 +102,6 @@ func refPath(abs string) string {
 	return ret
 }
 
-
 // sort protos by topological order
 func sortProtoFiles(pp []*Proto) []*Proto {
 	// Build dependency graph
