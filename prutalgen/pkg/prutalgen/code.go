@@ -153,7 +153,12 @@ func (g *GoCodeGen) EnumGen(e *Enum, w *CodeWriter) {
 	if e.genMapping() {
 		w.F("\n// Enum value maps for %s.", e.GoName)
 		w.F("var %s_name = map[int32]string {", e.GoName)
+		seen := map[int32]bool{}
 		for _, f := range e.Fields {
+			if seen[f.Value] {
+				continue // skip aliases, only first value wins
+			}
+			seen[f.Value] = true
 			w.F("%d: %q,", f.Value, f.Name)
 		}
 		w.F("}")

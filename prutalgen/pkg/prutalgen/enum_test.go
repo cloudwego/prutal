@@ -90,6 +90,44 @@ func TestEnum_Verify(t *testing.T) {
 	assert.ErrorContains(t, p.verify(), "1 is duplicated")
 	e.Fields = e.Fields[:1]
 	assert.NoError(t, p.verify())
+
+	// allow_alias
+	e.Fields = []*EnumField{
+		{Name: "A", Value: 0},
+		{Name: "B", Value: 1},
+		{Name: "C", Value: 1}, // alias of B
+	}
+	assert.ErrorContains(t, p.verify(), "1 is duplicated")
+	e.Options = Options{{Name: option_allow_alias, Value: "true"}}
+	assert.NoError(t, p.verify())
+	e.Options = nil
+}
+
+func TestLoader_EnumAllowAlias(t *testing.T) {
+	f := loadTestProto(t, `
+option go_package = "test";
+enum Status {
+  option allow_alias = true;
+  UNKNOWN = 0;
+  STARTED = 1;
+  RUNNING = 1;
+}
+`)
+	t.Log(f.String())
+
+	ee := f.Enums
+	assert.Equal(t, 1, len(ee))
+
+	e := ee[0]
+	assert.Equal(t, "Status", e.Name)
+	assert.True(t, e.allowAlias())
+	assert.Equal(t, 3, len(e.Fields))
+	assert.Equal(t, "UNKNOWN", e.Fields[0].Name)
+	assert.Equal(t, int32(0), e.Fields[0].Value)
+	assert.Equal(t, "STARTED", e.Fields[1].Name)
+	assert.Equal(t, int32(1), e.Fields[1].Value)
+	assert.Equal(t, "RUNNING", e.Fields[2].Name)
+	assert.Equal(t, int32(1), e.Fields[2].Value)
 }
 
 func TestLoader_Enum(t *testing.T) {

@@ -112,7 +112,7 @@ func verifyOption(name, v string) bool {
 	case f_field_presence:
 		return v == "EXPLICIT" || v == "IMPLICIT"
 
-	case option_packed:
+	case option_packed, option_allow_alias:
 		return verifyTrueOrFalse(v)
 
 	default:

@@ -86,6 +86,11 @@ func (e *Enum) genNoPrefix() bool {
 	return false
 }
 
+func (e *Enum) allowAlias() bool {
+	v, ok := e.Options.Get(option_allow_alias)
+	return ok && istrue(v)
+}
+
 func (e *Enum) genMapping() bool {
 	if e.Directives.Has(prutalNoEnumMapping) {
 		return false
@@ -119,7 +124,7 @@ func (e *Enum) verify() error {
 	for _, f := range e.Fields {
 		if e.IsReservedField(f.Value) {
 			errs = append(errs, fmt.Errorf("%q = %d is reserved", f.Name, f.Value))
-		} else if m[f.Value] {
+		} else if m[f.Value] && !e.allowAlias() {
 			errs = append(errs, fmt.Errorf("%q = %d is duplicated", f.Name, f.Value))
 		}
 		m[f.Value] = true

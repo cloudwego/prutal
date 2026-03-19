@@ -48,7 +48,8 @@ const (
 )
 
 const ( // proto2 options
-	option_packed = "packed"
+	option_packed      = "packed"
+	option_allow_alias = "allow_alias"
 )
 
 // https://protobuf.dev/programming-guides/proto3/#scalar
