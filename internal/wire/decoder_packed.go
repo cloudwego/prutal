@@ -25,6 +25,7 @@ import (
 
 func init() {
 	packedDecoderFuncs[CoderVarint32] = DecodePackedVarintU32
+	packedDecoderFuncs[CoderVarintI32] = DecodePackedVarintU32 // decode is the same: read varint, truncate
 	packedDecoderFuncs[CoderVarint64] = DecodePackedVarintU64
 	packedDecoderFuncs[CoderZigZag32] = DecodePackedZigZag32
 	packedDecoderFuncs[CoderZigZag64] = DecodePackedZigZag64

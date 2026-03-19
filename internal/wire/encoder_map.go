@@ -45,6 +45,10 @@ func init() {
 	register(CoderVarint32, CoderBytes, AppendMap_VarintU32_Bytes)
 	register(CoderVarint32, CoderString, AppendMap_VarintU32_String)
 
+	// CoderVarintI32 map encoders: no fast-path registration.
+	// Falls through to generic path which uses f.KeyAppendFunc/f.ValAppendFunc
+	// with proper sign extension via UnsafeAppendVarintI32.
+
 	register(CoderVarint64, CoderVarint32, AppendMap_VarintU64_VarintU32)
 	register(CoderVarint64, CoderVarint64, AppendMap_VarintU64_VarintU64)
 	register(CoderVarint64, CoderZigZag32, AppendMap_VarintU64_ZigZag32)

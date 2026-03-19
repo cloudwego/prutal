@@ -25,6 +25,57 @@ import (
 	"github.com/cloudwego/prutal/internal/wire"
 )
 
+// TestEncodeInt32SignExtension verifies that negative int32 values are
+// sign-extended to 64-bit during varint encoding, per protobuf spec.
+// Negative int32 values must always produce 10-byte varints.
+func TestEncodeInt32SignExtension(t *testing.T) {
+	type S struct {
+		V int32 `protobuf:"varint,1,opt"`
+	}
+
+	// int32(-1) must be sign-extended to uint64(0xFFFFFFFFFFFFFFFF) = 10-byte varint
+	data, err := MarshalAppend(nil, &S{V: -1})
+	assert.NoError(t, err)
+	// tag(1, varint) = 0x08, then 10 bytes of varint for -1
+	assert.Equal(t, 11, len(data))
+	assert.BytesEqual(t, []byte{0x08, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01}, data)
+
+	// int32(-100) sign-extended
+	data, err = MarshalAppend(nil, &S{V: -100})
+	assert.NoError(t, err)
+	assert.Equal(t, 11, len(data))
+
+	// positive int32 should not be affected (still compact)
+	data, err = MarshalAppend(nil, &S{V: 1})
+	assert.NoError(t, err)
+	assert.Equal(t, 2, len(data)) // tag + 1-byte varint
+
+	// packed int32 list with negative values
+	type L struct {
+		VV []int32 `protobuf:"varint,1,rep,packed"`
+	}
+	p := &L{VV: []int32{-1, -2, 1, 2}}
+	data, err = MarshalAppend(nil, p)
+	assert.NoError(t, err)
+	// round-trip verify
+	p0 := &L{}
+	err = Unmarshal(data, p0)
+	assert.NoError(t, err)
+	assert.DeepEqual(t, p, p0)
+
+	// unpacked int32 list with negative values
+	type UL struct {
+		VV []int32 `protobuf:"varint,1,rep"`
+	}
+	p2 := &UL{VV: []int32{-1, -2, 1, 2}}
+	data, err = MarshalAppend(nil, p2)
+	assert.NoError(t, err)
+	p3 := &UL{}
+	err = Unmarshal(data, p3)
+	assert.NoError(t, err)
+	assert.DeepEqual(t, p2, p3)
+}
+
 func TestEncodeOneof(t *testing.T) {
 	a := &TestOneofMessage_Field2{Field2: 123}
 	b := &TestOneofMessage_Field4{Field4: "helloworld"}

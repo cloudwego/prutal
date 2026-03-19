@@ -10,3 +10,13 @@ message TestNilElemMsg {
   repeated TestNilElemMsg nested_list = 2;
   map<int64, TestNilElemMsg> nested_map = 3;
 }
+
+message TestNegativeInt32Msg {
+  int32 v = 1;
+  repeated int32 list = 2;
+  repeated int32 packed_list = 3 [packed = true];
+  map<int32, int32> map_int32_int32 = 4;
+  map<int32, string> map_int32_string = 5;
+  map<string, int32> map_string_int32 = 6;
+  TestNegativeInt32Msg nested = 7;
+}

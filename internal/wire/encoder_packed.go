@@ -20,6 +20,7 @@ import "unsafe"
 
 func init() {
 	appendPackedFuncs[CoderVarint32] = UnsafeAppendPackedVarintU32
+	appendPackedFuncs[CoderVarintI32] = UnsafeAppendPackedVarintI32
 	appendPackedFuncs[CoderVarint64] = UnsafeAppendPackedVarintU64
 	appendPackedFuncs[CoderZigZag32] = UnsafeAppendPackedZigZag32
 	appendPackedFuncs[CoderZigZag64] = UnsafeAppendPackedZigZag64
@@ -32,6 +33,21 @@ func UnsafeAppendPackedVarintU64(b []byte, p unsafe.Pointer) []byte {
 	b = LenReserve(b)
 	sz0 := len(b)
 	for _, v := range *(*[]uint64)(p) {
+		for v >= 0x80 {
+			b = append(b, byte(v)|0x80)
+			v >>= 7
+		}
+		b = append(b, byte(v))
+	}
+	b = LenPack(b, len(b)-sz0)
+	return b
+}
+
+func UnsafeAppendPackedVarintI32(b []byte, p unsafe.Pointer) []byte {
+	b = LenReserve(b)
+	sz0 := len(b)
+	for _, x := range *(*[]int32)(p) {
+		v := uint64(int64(x))
 		for v >= 0x80 {
 			b = append(b, byte(v)|0x80)
 			v >>= 7

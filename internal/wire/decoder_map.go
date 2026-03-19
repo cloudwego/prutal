@@ -43,6 +43,17 @@ func init() {
 	register(CoderVarint32, CoderFixed64, DecodeMap_VarintU32_Fixed64)
 	register(CoderVarint32, CoderBool, DecodeMap_VarintU32_Bool)
 
+	// CoderVarintI32 uses the same decoders as CoderVarint32: varint decode truncates to int32
+	register(CoderVarintI32, CoderVarintI32, DecodeMap_VarintU32_VarintU32)
+	register(CoderVarintI32, CoderVarint32, DecodeMap_VarintU32_VarintU32)
+	register(CoderVarintI32, CoderVarint64, DecodeMap_VarintU32_VarintU64)
+	register(CoderVarintI32, CoderZigZag32, DecodeMap_VarintU32_ZigZag32)
+	register(CoderVarintI32, CoderZigZag64, DecodeMap_VarintU32_ZigZag64)
+	register(CoderVarintI32, CoderFixed32, DecodeMap_VarintU32_Fixed32)
+	register(CoderVarintI32, CoderFixed64, DecodeMap_VarintU32_Fixed64)
+	register(CoderVarintI32, CoderBool, DecodeMap_VarintU32_Bool)
+
+	register(CoderVarint64, CoderVarintI32, DecodeMap_VarintU64_VarintU32)
 	register(CoderVarint64, CoderVarint32, DecodeMap_VarintU64_VarintU32)
 	register(CoderVarint64, CoderVarint64, DecodeMap_VarintU64_VarintU64)
 	register(CoderVarint64, CoderZigZag32, DecodeMap_VarintU64_ZigZag32)
@@ -51,6 +62,7 @@ func init() {
 	register(CoderVarint64, CoderFixed64, DecodeMap_VarintU64_Fixed64)
 	register(CoderVarint64, CoderBool, DecodeMap_VarintU64_Bool)
 
+	register(CoderZigZag32, CoderVarintI32, DecodeMap_ZigZag32_VarintU32)
 	register(CoderZigZag32, CoderVarint32, DecodeMap_ZigZag32_VarintU32)
 	register(CoderZigZag32, CoderVarint64, DecodeMap_ZigZag32_VarintU64)
 	register(CoderZigZag32, CoderZigZag32, DecodeMap_ZigZag32_ZigZag32)
@@ -59,6 +71,7 @@ func init() {
 	register(CoderZigZag32, CoderFixed64, DecodeMap_ZigZag32_Fixed64)
 	register(CoderZigZag32, CoderBool, DecodeMap_ZigZag32_Bool)
 
+	register(CoderZigZag64, CoderVarintI32, DecodeMap_ZigZag64_VarintU32)
 	register(CoderZigZag64, CoderVarint32, DecodeMap_ZigZag64_VarintU32)
 	register(CoderZigZag64, CoderVarint64, DecodeMap_ZigZag64_VarintU64)
 	register(CoderZigZag64, CoderZigZag32, DecodeMap_ZigZag64_ZigZag32)
@@ -67,6 +80,7 @@ func init() {
 	register(CoderZigZag64, CoderFixed64, DecodeMap_ZigZag64_Fixed64)
 	register(CoderZigZag64, CoderBool, DecodeMap_ZigZag64_Bool)
 
+	register(CoderFixed32, CoderVarintI32, DecodeMap_Fixed32_VarintU32)
 	register(CoderFixed32, CoderVarint32, DecodeMap_Fixed32_VarintU32)
 	register(CoderFixed32, CoderVarint64, DecodeMap_Fixed32_VarintU64)
 	register(CoderFixed32, CoderZigZag32, DecodeMap_Fixed32_ZigZag32)
@@ -75,6 +89,7 @@ func init() {
 	register(CoderFixed32, CoderFixed64, DecodeMap_Fixed32_Fixed64)
 	register(CoderFixed32, CoderBool, DecodeMap_Fixed32_Bool)
 
+	register(CoderFixed64, CoderVarintI32, DecodeMap_Fixed64_VarintU32)
 	register(CoderFixed64, CoderVarint32, DecodeMap_Fixed64_VarintU32)
 	register(CoderFixed64, CoderVarint64, DecodeMap_Fixed64_VarintU64)
 	register(CoderFixed64, CoderZigZag32, DecodeMap_Fixed64_ZigZag32)

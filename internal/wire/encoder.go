@@ -27,15 +27,16 @@ type AppendFunc func(b []byte, p unsafe.Pointer) []byte
 type AppendRepeatedFunc func(b []byte, tag uint64, p unsafe.Pointer) []byte
 
 var appendFuncs = map[CoderType]AppendFunc{
-	CoderVarint32: UnsafeAppendVarintU32,
-	CoderVarint64: UnsafeAppendVarintU64,
-	CoderZigZag32: UnsafeAppendZigZag32,
-	CoderZigZag64: UnsafeAppendZigZag64,
-	CoderFixed32:  UnsafeAppendFixed32,
-	CoderFixed64:  UnsafeAppendFixed64,
-	CoderString:   UnsafeAppendString,
-	CoderBytes:    UnsafeAppendBytes,
-	CoderBool:     UnsafeAppendBool,
+	CoderVarint32:  UnsafeAppendVarintU32,
+	CoderVarintI32: UnsafeAppendVarintI32,
+	CoderVarint64:  UnsafeAppendVarintU64,
+	CoderZigZag32:  UnsafeAppendZigZag32,
+	CoderZigZag64:  UnsafeAppendZigZag64,
+	CoderFixed32:   UnsafeAppendFixed32,
+	CoderFixed64:   UnsafeAppendFixed64,
+	CoderString:    UnsafeAppendString,
+	CoderBytes:     UnsafeAppendBytes,
+	CoderBool:      UnsafeAppendBool,
 }
 
 var appendPackedFuncs = map[CoderType]AppendFunc{}
@@ -155,6 +156,13 @@ func UnsafeAppendVarintU64(b []byte, p unsafe.Pointer) []byte {
 			byte((v>>56)&0x7f|0x80),
 			1)
 	}
+}
+
+// UnsafeAppendVarintI32 encodes int32 as varint with sign extension to 64-bit,
+// per protobuf spec: negative int32 values are always 10 bytes.
+func UnsafeAppendVarintI32(b []byte, p unsafe.Pointer) []byte {
+	v := uint64(int64(*(*int32)(p)))
+	return AppendVarint(b, v)
 }
 
 func UnsafeAppendVarintU32(b []byte, p unsafe.Pointer) []byte {

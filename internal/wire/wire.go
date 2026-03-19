@@ -62,11 +62,16 @@ func AppendValTag(b []byte, t Type) []byte {
 	return append(b, byte(2)<<3|byte(t))
 }
 
+func SizeVarint(v uint64) int {
+	return protowire.SizeVarint(v)
+}
+
 type CoderType int8
 
 const ( // used for coder func mapping
 	CoderVarint32 = 1 + iota
 	CoderVarint64
+	CoderVarintI32 // int32 with sign extension to 64-bit
 	CoderZigZag32
 	CoderZigZag64
 	CoderFixed32

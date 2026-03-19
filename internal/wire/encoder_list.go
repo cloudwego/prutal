@@ -21,19 +21,33 @@ import (
 )
 
 var appendListFuncs = map[CoderType]AppendRepeatedFunc{
-	CoderVarint32: UnsafeAppendVarintU32List,
-	CoderVarint64: UnsafeAppendVarintU64List,
-	CoderZigZag32: UnsafeAppendZigZag32List,
-	CoderZigZag64: UnsafeAppendZigZag64List,
-	CoderFixed32:  UnsafeAppendFixed32List,
-	CoderFixed64:  UnsafeAppendFixed64List,
-	CoderBool:     UnsafeAppendBoolList,
-	CoderBytes:    UnsafeAppendBytesList,
-	CoderString:   UnsafeAppendStringList,
+	CoderVarint32:  UnsafeAppendVarintU32List,
+	CoderVarintI32: UnsafeAppendVarintI32List,
+	CoderVarint64:  UnsafeAppendVarintU64List,
+	CoderZigZag32:  UnsafeAppendZigZag32List,
+	CoderZigZag64:  UnsafeAppendZigZag64List,
+	CoderFixed32:   UnsafeAppendFixed32List,
+	CoderFixed64:   UnsafeAppendFixed64List,
+	CoderBool:      UnsafeAppendBoolList,
+	CoderBytes:     UnsafeAppendBytesList,
+	CoderString:    UnsafeAppendStringList,
 }
 
 func GetAppendListFunc(t CoderType) AppendRepeatedFunc {
 	return appendListFuncs[t]
+}
+
+func UnsafeAppendVarintI32List(b []byte, tag uint64, p unsafe.Pointer) []byte {
+	for _, x := range *(*[]int32)(p) {
+		b = AppendVarintSmall(b, tag)
+		v := uint64(int64(x))
+		for v >= 0x80 {
+			b = append(b, byte(v)|0x80)
+			v >>= 7
+		}
+		b = append(b, byte(v))
+	}
+	return b
 }
 
 func UnsafeAppendVarintU64List(b []byte, tag uint64, p unsafe.Pointer) []byte {
