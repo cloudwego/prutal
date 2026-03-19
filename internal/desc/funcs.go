@@ -112,6 +112,11 @@ func dereferenceElemKind(t reflect.Type) reflect.Kind {
 	return reflectTypeKind(t)
 }
 
+func getSizeFunc(t TagType, k reflect.Kind) wire.SizeFunc {
+	c := getCoderType(t, k)
+	return wire.GetSizeFunc(c)
+}
+
 func getAppendFunc(t TagType, k reflect.Kind, packed bool) wire.AppendFunc {
 	c := getCoderType(t, k)
 	return wire.GetAppendFunc(c, packed)

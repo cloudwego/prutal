@@ -29,9 +29,9 @@ Prutal aims to minimize code generation as much as possible while ensuring seria
 
 * ✅ Marshal / Unmarshal — binary wire format
 * ✅ MarshalAppend — append-friendly encoding
+* ✅ Size — compute wire size without marshaling (zero allocation)
 * ✅ Reset
 * ❌ Clone / Merge / Equal
-* ❌ Size — compute wire size without marshaling
 * ❌ CheckInitialized — validate required field presence
 * ❌ MarshalOptions / UnmarshalOptions (deterministic output, discard unknown, recursion limits, etc.)
 

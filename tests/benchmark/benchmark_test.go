@@ -77,6 +77,22 @@ func runBenchmark(p testmessage, b *testing.B) {
 			}
 		}
 	})
+
+	// verify Size matches proto.Size
+	if sz, err := prutal.Size(p); err != nil || sz != proto.Size(p) {
+		b.Fatalf("Size mismatch: prutal=%d proto=%d err=%v", sz, proto.Size(p), err)
+	}
+
+	b.Run("size-protobuf", func(b *testing.B) {
+		for range b.N {
+			_ = proto.Size(p)
+		}
+	})
+	b.Run("size-prutal", func(b *testing.B) {
+		for range b.N {
+			_, _ = prutal.Size(p)
+		}
+	})
 }
 
 func BenchmarkScalarType(b *testing.B) {

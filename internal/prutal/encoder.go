@@ -40,11 +40,11 @@ type Encoder struct {
 }
 
 func (e *Encoder) AppendStruct(b []byte, base unsafe.Pointer, s *desc.StructDesc, encodeLen bool, maxdepth int) (_ []byte, err error) {
-	if base == nil {
-		base = s.Empty // empty struct
-	}
 	if maxdepth == 0 {
 		return b, errMaxDepthExceeded
+	}
+	if base == nil {
+		base = s.Empty // empty struct
 	}
 	var beforeStructSize int
 	if encodeLen {

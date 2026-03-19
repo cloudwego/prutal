@@ -32,6 +32,11 @@ func Marshal(v interface{}) ([]byte, error) {
 	return prutal.MarshalAppend(nil, v)
 }
 
+// Size returns the size in bytes of the wire-format encoding of v.
+func Size(v interface{}) (int, error) {
+	return prutal.Size(v)
+}
+
 // Unmarshal parses the protobuf-encoded data and stores the result in the value pointed to by v.
 func Unmarshal(b []byte, v interface{}) error {
 	return prutal.Unmarshal(b, v)

@@ -43,6 +43,13 @@ func TestNilElem(t *testing.T) {
 	assert.NoError(t, err)
 
 	assert.DeepEqual(t, p1, p2)
+
+	// Size test
+	b, err = prutal.Marshal(p)
+	assert.NoError(t, err)
+	sz, err := prutal.Size(p)
+	assert.NoError(t, err)
+	assert.Equal(t, len(b), sz)
 }
 
 func TestNegativeInt32(t *testing.T) {

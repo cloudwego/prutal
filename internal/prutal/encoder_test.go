@@ -50,6 +50,11 @@ func TestEncodeInt32SignExtension(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 2, len(data)) // tag + 1-byte varint
 
+	// Size must match Marshal
+	sz, err := Size(&S{V: -1})
+	assert.NoError(t, err)
+	assert.Equal(t, 11, sz)
+
 	// packed int32 list with negative values
 	type L struct {
 		VV []int32 `protobuf:"varint,1,rep,packed"`
@@ -57,6 +62,9 @@ func TestEncodeInt32SignExtension(t *testing.T) {
 	p := &L{VV: []int32{-1, -2, 1, 2}}
 	data, err = MarshalAppend(nil, p)
 	assert.NoError(t, err)
+	sz, err = Size(p)
+	assert.NoError(t, err)
+	assert.Equal(t, len(data), sz)
 	// round-trip verify
 	p0 := &L{}
 	err = Unmarshal(data, p0)
@@ -70,6 +78,9 @@ func TestEncodeInt32SignExtension(t *testing.T) {
 	p2 := &UL{VV: []int32{-1, -2, 1, 2}}
 	data, err = MarshalAppend(nil, p2)
 	assert.NoError(t, err)
+	sz, err = Size(p2)
+	assert.NoError(t, err)
+	assert.Equal(t, len(data), sz)
 	p3 := &UL{}
 	err = Unmarshal(data, p3)
 	assert.NoError(t, err)

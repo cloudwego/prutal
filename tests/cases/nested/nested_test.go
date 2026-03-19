@@ -53,4 +53,11 @@ func TestNested(t *testing.T) {
 	assert.NoError(t, err)
 
 	assert.DeepEqual(t, p, p0)
+
+	// Size test
+	bs, err = prutal.Marshal(p)
+	assert.NoError(t, err)
+	sz, err := prutal.Size(p)
+	assert.NoError(t, err)
+	assert.Equal(t, len(bs), sz)
 }

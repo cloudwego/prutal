@@ -46,6 +46,30 @@ func MarshalAppend(b []byte, v interface{}) ([]byte, error) {
 	return b, err
 }
 
+// Size returns the size in bytes of the wire-format encoding of v.
+func Size(v interface{}) (int, error) {
+	if v == nil {
+		return 0, nil
+	}
+	hack.PanicIfHackErr()
+	rv := reflect.ValueOf(v)
+	if rv.Kind() != reflect.Pointer {
+		return 0, errNotPointer
+	}
+	if rv.IsNil() {
+		return 0, nil
+	}
+	s := desc.CacheGet(rv)
+	if s == nil {
+		var err error
+		s, err = desc.GetOrParse(rv)
+		if err != nil {
+			return 0, err
+		}
+	}
+	return SizeStruct(rv.UnsafePointer(), s, defaultRecursionMaxDepth)
+}
+
 func Unmarshal(b []byte, v interface{}) error {
 	hack.PanicIfHackErr()
 	rv := reflect.ValueOf(v)
