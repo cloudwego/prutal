@@ -161,8 +161,49 @@ func UnsafeAppendVarintU64(b []byte, p unsafe.Pointer) []byte {
 // UnsafeAppendVarintI32 encodes int32 as varint with sign extension to 64-bit,
 // per protobuf spec: negative int32 values are always 10 bytes.
 func UnsafeAppendVarintI32(b []byte, p unsafe.Pointer) []byte {
-	v := uint64(int64(*(*int32)(p)))
-	return AppendVarint(b, v)
+	x := *(*int32)(p)
+	if x >= 0 {
+		v := uint32(x)
+		switch {
+		case v < 1<<7:
+			return append(b, byte(v))
+		case v < 1<<14:
+			return append(b,
+				byte((v>>0)|0x80),
+				byte(v>>7))
+		case v < 1<<21:
+			return append(b,
+				byte((v>>0)|0x80),
+				byte((v>>7)|0x80),
+				byte(v>>14))
+		case v < 1<<28:
+			return append(b,
+				byte((v>>0)|0x80),
+				byte((v>>7)|0x80),
+				byte((v>>14)|0x80),
+				byte(v>>21))
+		default:
+			return append(b,
+				byte((v>>0)|0x80),
+				byte((v>>7)|0x80),
+				byte((v>>14)|0x80),
+				byte((v>>21)|0x80),
+				byte(v>>28))
+		}
+	}
+	// Negative int32: sign-extend to 64-bit, always exactly 10 bytes
+	v := uint64(int64(x))
+	return append(b,
+		byte((v>>0)&0x7f|0x80),
+		byte((v>>7)&0x7f|0x80),
+		byte((v>>14)&0x7f|0x80),
+		byte((v>>21)&0x7f|0x80),
+		byte((v>>28)&0x7f|0x80),
+		byte((v>>35)&0x7f|0x80),
+		byte((v>>42)&0x7f|0x80),
+		byte((v>>49)&0x7f|0x80),
+		byte((v>>56)&0x7f|0x80),
+		1)
 }
 
 func UnsafeAppendVarintU32(b []byte, p unsafe.Pointer) []byte {

@@ -170,6 +170,11 @@ func sizeListField(f *desc.FieldDesc, p unsafe.Pointer, t *desc.Type, maxdepth i
 }
 
 func sizeMapField(f *desc.FieldDesc, p unsafe.Pointer, maxdepth int) (int, error) {
+	// fast path: typed iteration for scalar-valued maps (no reflection)
+	if f.SizeMapFunc != nil {
+		return f.SizeMapFunc(p, f.WireTagSize), nil
+	}
+
 	t := f.T
 	vt := t.V
 

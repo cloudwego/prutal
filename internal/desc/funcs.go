@@ -117,6 +117,12 @@ func getSizeFunc(t TagType, k reflect.Kind) wire.SizeFunc {
 	return wire.GetSizeFunc(c)
 }
 
+func getSizeMapFunc(f *FieldDesc) wire.SizeMapFunc {
+	kt := getCoderType(f.KeyType, reflectTypeKind(f.T.K.T))
+	vt := getCoderType(f.ValType, reflectTypeKind(f.T.V.T))
+	return wire.GetMapSizeFunc(kt, vt)
+}
+
 func getAppendFunc(t TagType, k reflect.Kind, packed bool) wire.AppendFunc {
 	c := getCoderType(t, k)
 	return wire.GetAppendFunc(c, packed)

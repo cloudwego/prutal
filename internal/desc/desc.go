@@ -190,6 +190,8 @@ type FieldDesc struct {
 	KeySizeFunc wire.SizeFunc
 	ValSizeFunc wire.SizeFunc
 
+	SizeMapFunc wire.SizeMapFunc
+
 	// only for packed types, and some map types
 	DecodeFunc func(b []byte, p unsafe.Pointer) error
 
@@ -245,6 +247,7 @@ func (f *FieldDesc) finalizeField() (err error) {
 		f.ValAppendFunc = getAppendFunc(f.ValType, t.V.RealKind(), false)
 		f.KeySizeFunc = getSizeFunc(f.KeyType, t.K.RealKind())
 		f.ValSizeFunc = getSizeFunc(f.ValType, t.V.RealKind())
+		f.SizeMapFunc = getSizeMapFunc(f)
 	}
 	if f.IsList {
 		f.AppendRepeated = getAppendListFunc(f)
