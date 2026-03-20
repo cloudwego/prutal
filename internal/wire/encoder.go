@@ -27,7 +27,7 @@ type AppendFunc func(b []byte, p unsafe.Pointer) []byte
 type AppendRepeatedFunc func(b []byte, tag uint64, p unsafe.Pointer) []byte
 
 var appendFuncs = map[CoderType]AppendFunc{
-	CoderVarint32:  UnsafeAppendVarintU32,
+	CoderVarintU32: UnsafeAppendVarintU32,
 	CoderVarintI32: UnsafeAppendVarintI32,
 	CoderVarint64:  UnsafeAppendVarintU64,
 	CoderZigZag32:  UnsafeAppendZigZag32,

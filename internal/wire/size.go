@@ -25,7 +25,7 @@ import (
 type SizeFunc func(p unsafe.Pointer) int
 
 var sizeFuncs = map[CoderType]SizeFunc{
-	CoderVarint32:  UnsafeSizeVarintU32,
+	CoderVarintU32: UnsafeSizeVarintU32,
 	CoderVarintI32: UnsafeSizeVarintI32,
 	CoderVarint64:  UnsafeSizeVarintU64,
 	CoderZigZag32:  UnsafeSizeZigZag32,

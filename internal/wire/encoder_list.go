@@ -21,7 +21,7 @@ import (
 )
 
 var appendListFuncs = map[CoderType]AppendRepeatedFunc{
-	CoderVarint32:  UnsafeAppendVarintU32List,
+	CoderVarintU32: UnsafeAppendVarintU32List,
 	CoderVarintI32: UnsafeAppendVarintI32List,
 	CoderVarint64:  UnsafeAppendVarintU64List,
 	CoderZigZag32:  UnsafeAppendZigZag32List,

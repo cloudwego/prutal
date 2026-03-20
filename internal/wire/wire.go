@@ -66,19 +66,23 @@ func SizeVarint(v uint64) int {
 	return protowire.SizeVarint(v)
 }
 
+// CoderType identifies a protobuf field encoding strategy. It is used as a key
+// to look up type-specialized encode, decode, and size functions (AppendFunc,
+// SizeFunc, SizeMapFunc, etc.) so the hot path dispatches through a function
+// pointer instead of a type switch.
 type CoderType int8
 
-const ( // used for coder func mapping
-	CoderVarint32 = 1 + iota
-	CoderVarint64
-	CoderVarintI32 // int32 with sign extension to 64-bit
-	CoderZigZag32
-	CoderZigZag64
-	CoderFixed32
-	CoderFixed64
-	CoderBytes
-	CoderString
-	CoderBool
-	CoderStruct
-	CoderUnknown
+const (
+	CoderVarintU32 CoderType = 1 + iota // uint32 varint (also used for enum uint32)
+	CoderVarintI32                      // int32 varint, sign-extended to 64-bit per protobuf spec
+	CoderVarint64                       // uint64 varint
+	CoderZigZag32                       // sint32 zigzag encoding
+	CoderZigZag64                       // sint64 zigzag encoding
+	CoderFixed32                        // fixed32 / sfixed32 / float (4-byte little-endian)
+	CoderFixed64                        // fixed64 / sfixed64 / double (8-byte little-endian)
+	CoderBytes                          // bytes (length-prefixed)
+	CoderString                         // string (length-prefixed)
+	CoderBool                           // bool (single varint byte)
+	CoderStruct                         // embedded message (length-prefixed, recursive)
+	CoderUnknown                        // unsupported or unresolved type
 )

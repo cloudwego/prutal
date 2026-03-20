@@ -35,21 +35,21 @@ func init() {
 		mapEncoderFuncs[mapEncoderFuncKey{K: k, V: v}] = f
 	}
 
-	register(CoderVarint32, CoderVarint32, AppendMap_VarintU32_VarintU32)
-	register(CoderVarint32, CoderVarint64, AppendMap_VarintU32_VarintU64)
-	register(CoderVarint32, CoderZigZag32, AppendMap_VarintU32_ZigZag32)
-	register(CoderVarint32, CoderZigZag64, AppendMap_VarintU32_ZigZag64)
-	register(CoderVarint32, CoderFixed32, AppendMap_VarintU32_Fixed32)
-	register(CoderVarint32, CoderFixed64, AppendMap_VarintU32_Fixed64)
-	register(CoderVarint32, CoderBool, AppendMap_VarintU32_Bool)
-	register(CoderVarint32, CoderBytes, AppendMap_VarintU32_Bytes)
-	register(CoderVarint32, CoderString, AppendMap_VarintU32_String)
+	register(CoderVarintU32, CoderVarintU32, AppendMap_VarintU32_VarintU32)
+	register(CoderVarintU32, CoderVarint64, AppendMap_VarintU32_VarintU64)
+	register(CoderVarintU32, CoderZigZag32, AppendMap_VarintU32_ZigZag32)
+	register(CoderVarintU32, CoderZigZag64, AppendMap_VarintU32_ZigZag64)
+	register(CoderVarintU32, CoderFixed32, AppendMap_VarintU32_Fixed32)
+	register(CoderVarintU32, CoderFixed64, AppendMap_VarintU32_Fixed64)
+	register(CoderVarintU32, CoderBool, AppendMap_VarintU32_Bool)
+	register(CoderVarintU32, CoderBytes, AppendMap_VarintU32_Bytes)
+	register(CoderVarintU32, CoderString, AppendMap_VarintU32_String)
 
 	// CoderVarintI32 map encoders: no fast-path registration.
 	// Falls through to generic path which uses f.KeyAppendFunc/f.ValAppendFunc
 	// with proper sign extension via UnsafeAppendVarintI32.
 
-	register(CoderVarint64, CoderVarint32, AppendMap_VarintU64_VarintU32)
+	register(CoderVarint64, CoderVarintU32, AppendMap_VarintU64_VarintU32)
 	register(CoderVarint64, CoderVarint64, AppendMap_VarintU64_VarintU64)
 	register(CoderVarint64, CoderZigZag32, AppendMap_VarintU64_ZigZag32)
 	register(CoderVarint64, CoderZigZag64, AppendMap_VarintU64_ZigZag64)
@@ -59,7 +59,7 @@ func init() {
 	register(CoderVarint64, CoderBytes, AppendMap_VarintU64_Bytes)
 	register(CoderVarint64, CoderString, AppendMap_VarintU64_String)
 
-	register(CoderZigZag32, CoderVarint32, AppendMap_ZigZag32_VarintU32)
+	register(CoderZigZag32, CoderVarintU32, AppendMap_ZigZag32_VarintU32)
 	register(CoderZigZag32, CoderVarint64, AppendMap_ZigZag32_VarintU64)
 	register(CoderZigZag32, CoderZigZag32, AppendMap_ZigZag32_ZigZag32)
 	register(CoderZigZag32, CoderZigZag64, AppendMap_ZigZag32_ZigZag64)
@@ -69,7 +69,7 @@ func init() {
 	register(CoderZigZag32, CoderBytes, AppendMap_ZigZag32_Bytes)
 	register(CoderZigZag32, CoderString, AppendMap_ZigZag32_String)
 
-	register(CoderZigZag64, CoderVarint32, AppendMap_ZigZag64_VarintU32)
+	register(CoderZigZag64, CoderVarintU32, AppendMap_ZigZag64_VarintU32)
 	register(CoderZigZag64, CoderVarint64, AppendMap_ZigZag64_VarintU64)
 	register(CoderZigZag64, CoderZigZag32, AppendMap_ZigZag64_ZigZag32)
 	register(CoderZigZag64, CoderZigZag64, AppendMap_ZigZag64_ZigZag64)
@@ -79,7 +79,7 @@ func init() {
 	register(CoderZigZag64, CoderBytes, AppendMap_ZigZag64_Bytes)
 	register(CoderZigZag64, CoderString, AppendMap_ZigZag64_String)
 
-	register(CoderFixed32, CoderVarint32, AppendMap_Fixed32_VarintU32)
+	register(CoderFixed32, CoderVarintU32, AppendMap_Fixed32_VarintU32)
 	register(CoderFixed32, CoderVarint64, AppendMap_Fixed32_VarintU64)
 	register(CoderFixed32, CoderZigZag32, AppendMap_Fixed32_ZigZag32)
 	register(CoderFixed32, CoderZigZag64, AppendMap_Fixed32_ZigZag64)
@@ -89,7 +89,7 @@ func init() {
 	register(CoderFixed32, CoderBytes, AppendMap_Fixed32_Bytes)
 	register(CoderFixed32, CoderString, AppendMap_Fixed32_String)
 
-	register(CoderFixed64, CoderVarint32, AppendMap_Fixed64_VarintU32)
+	register(CoderFixed64, CoderVarintU32, AppendMap_Fixed64_VarintU32)
 	register(CoderFixed64, CoderVarint64, AppendMap_Fixed64_VarintU64)
 	register(CoderFixed64, CoderZigZag32, AppendMap_Fixed64_ZigZag32)
 	register(CoderFixed64, CoderZigZag64, AppendMap_Fixed64_ZigZag64)
@@ -99,7 +99,7 @@ func init() {
 	register(CoderFixed64, CoderBytes, AppendMap_Fixed64_Bytes)
 	register(CoderFixed64, CoderString, AppendMap_Fixed64_String)
 
-	register(CoderBool, CoderVarint32, AppendMap_Bool_VarintU32)
+	register(CoderBool, CoderVarintU32, AppendMap_Bool_VarintU32)
 	register(CoderBool, CoderVarint64, AppendMap_Bool_VarintU64)
 	register(CoderBool, CoderZigZag32, AppendMap_Bool_ZigZag32)
 	register(CoderBool, CoderZigZag64, AppendMap_Bool_ZigZag64)
@@ -109,7 +109,7 @@ func init() {
 	register(CoderBool, CoderBytes, AppendMap_Bool_Bytes)
 	register(CoderBool, CoderString, AppendMap_Bool_String)
 
-	register(CoderString, CoderVarint32, AppendMap_String_VarintU32)
+	register(CoderString, CoderVarintU32, AppendMap_String_VarintU32)
 	register(CoderString, CoderVarint64, AppendMap_String_VarintU64)
 	register(CoderString, CoderZigZag32, AppendMap_String_ZigZag32)
 	register(CoderString, CoderZigZag64, AppendMap_String_ZigZag64)

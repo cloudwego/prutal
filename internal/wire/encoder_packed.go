@@ -19,7 +19,7 @@ package wire
 import "unsafe"
 
 func init() {
-	appendPackedFuncs[CoderVarint32] = UnsafeAppendPackedVarintU32
+	appendPackedFuncs[CoderVarintU32] = UnsafeAppendPackedVarintU32
 	appendPackedFuncs[CoderVarintI32] = UnsafeAppendPackedVarintI32
 	appendPackedFuncs[CoderVarint64] = UnsafeAppendPackedVarintU64
 	appendPackedFuncs[CoderZigZag32] = UnsafeAppendPackedZigZag32

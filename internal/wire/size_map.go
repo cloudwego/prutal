@@ -68,20 +68,20 @@ func init() {
 		mapSizeFuncs[mapEncoderFuncKey{K: k, V: v}] = f
 	}
 
-	// CoderVarint32 keys (Go: uint32)
-	reg(CoderVarint32, CoderVarint32, makeSizeMap(szVarintU32, szVarintU32))
-	reg(CoderVarint32, CoderVarintI32, makeSizeMap(szVarintU32, szVarintI32))
-	reg(CoderVarint32, CoderVarint64, makeSizeMap(szVarintU32, szVarintU64))
-	reg(CoderVarint32, CoderZigZag32, makeSizeMap(szVarintU32, szZigZag32))
-	reg(CoderVarint32, CoderZigZag64, makeSizeMap(szVarintU32, szZigZag64))
-	reg(CoderVarint32, CoderFixed32, makeSizeMap(szVarintU32, szFixed32))
-	reg(CoderVarint32, CoderFixed64, makeSizeMap(szVarintU32, szFixed64))
-	reg(CoderVarint32, CoderBool, makeSizeMap(szVarintU32, szBool))
-	reg(CoderVarint32, CoderBytes, makeSizeMap(szVarintU32, szByteSlice))
-	reg(CoderVarint32, CoderString, makeSizeMap(szVarintU32, szString))
+	// CoderVarintU32 keys (Go: uint32)
+	reg(CoderVarintU32, CoderVarintU32, makeSizeMap(szVarintU32, szVarintU32))
+	reg(CoderVarintU32, CoderVarintI32, makeSizeMap(szVarintU32, szVarintI32))
+	reg(CoderVarintU32, CoderVarint64, makeSizeMap(szVarintU32, szVarintU64))
+	reg(CoderVarintU32, CoderZigZag32, makeSizeMap(szVarintU32, szZigZag32))
+	reg(CoderVarintU32, CoderZigZag64, makeSizeMap(szVarintU32, szZigZag64))
+	reg(CoderVarintU32, CoderFixed32, makeSizeMap(szVarintU32, szFixed32))
+	reg(CoderVarintU32, CoderFixed64, makeSizeMap(szVarintU32, szFixed64))
+	reg(CoderVarintU32, CoderBool, makeSizeMap(szVarintU32, szBool))
+	reg(CoderVarintU32, CoderBytes, makeSizeMap(szVarintU32, szByteSlice))
+	reg(CoderVarintU32, CoderString, makeSizeMap(szVarintU32, szString))
 
 	// CoderVarintI32 keys (Go: int32, signed varint)
-	reg(CoderVarintI32, CoderVarint32, makeSizeMap(szVarintI32, szVarintU32))
+	reg(CoderVarintI32, CoderVarintU32, makeSizeMap(szVarintI32, szVarintU32))
 	reg(CoderVarintI32, CoderVarintI32, makeSizeMap(szVarintI32, szVarintI32))
 	reg(CoderVarintI32, CoderVarint64, makeSizeMap(szVarintI32, szVarintU64))
 	reg(CoderVarintI32, CoderZigZag32, makeSizeMap(szVarintI32, szZigZag32))
@@ -93,7 +93,7 @@ func init() {
 	reg(CoderVarintI32, CoderString, makeSizeMap(szVarintI32, szString))
 
 	// CoderVarint64 keys (Go: uint64)
-	reg(CoderVarint64, CoderVarint32, makeSizeMap(szVarintU64, szVarintU32))
+	reg(CoderVarint64, CoderVarintU32, makeSizeMap(szVarintU64, szVarintU32))
 	reg(CoderVarint64, CoderVarintI32, makeSizeMap(szVarintU64, szVarintI32))
 	reg(CoderVarint64, CoderVarint64, makeSizeMap(szVarintU64, szVarintU64))
 	reg(CoderVarint64, CoderZigZag32, makeSizeMap(szVarintU64, szZigZag32))
@@ -105,7 +105,7 @@ func init() {
 	reg(CoderVarint64, CoderString, makeSizeMap(szVarintU64, szString))
 
 	// CoderZigZag32 keys (Go: int32)
-	reg(CoderZigZag32, CoderVarint32, makeSizeMap(szZigZag32, szVarintU32))
+	reg(CoderZigZag32, CoderVarintU32, makeSizeMap(szZigZag32, szVarintU32))
 	reg(CoderZigZag32, CoderVarintI32, makeSizeMap(szZigZag32, szVarintI32))
 	reg(CoderZigZag32, CoderVarint64, makeSizeMap(szZigZag32, szVarintU64))
 	reg(CoderZigZag32, CoderZigZag32, makeSizeMap(szZigZag32, szZigZag32))
@@ -117,7 +117,7 @@ func init() {
 	reg(CoderZigZag32, CoderString, makeSizeMap(szZigZag32, szString))
 
 	// CoderZigZag64 keys (Go: int64)
-	reg(CoderZigZag64, CoderVarint32, makeSizeMap(szZigZag64, szVarintU32))
+	reg(CoderZigZag64, CoderVarintU32, makeSizeMap(szZigZag64, szVarintU32))
 	reg(CoderZigZag64, CoderVarintI32, makeSizeMap(szZigZag64, szVarintI32))
 	reg(CoderZigZag64, CoderVarint64, makeSizeMap(szZigZag64, szVarintU64))
 	reg(CoderZigZag64, CoderZigZag32, makeSizeMap(szZigZag64, szZigZag32))
@@ -129,7 +129,7 @@ func init() {
 	reg(CoderZigZag64, CoderString, makeSizeMap(szZigZag64, szString))
 
 	// CoderFixed32 keys (Go: uint32)
-	reg(CoderFixed32, CoderVarint32, makeSizeMap(szFixed32, szVarintU32))
+	reg(CoderFixed32, CoderVarintU32, makeSizeMap(szFixed32, szVarintU32))
 	reg(CoderFixed32, CoderVarintI32, makeSizeMap(szFixed32, szVarintI32))
 	reg(CoderFixed32, CoderVarint64, makeSizeMap(szFixed32, szVarintU64))
 	reg(CoderFixed32, CoderZigZag32, makeSizeMap(szFixed32, szZigZag32))
@@ -141,7 +141,7 @@ func init() {
 	reg(CoderFixed32, CoderString, makeSizeMap(szFixed32, szString))
 
 	// CoderFixed64 keys (Go: uint64)
-	reg(CoderFixed64, CoderVarint32, makeSizeMap(szFixed64, szVarintU32))
+	reg(CoderFixed64, CoderVarintU32, makeSizeMap(szFixed64, szVarintU32))
 	reg(CoderFixed64, CoderVarintI32, makeSizeMap(szFixed64, szVarintI32))
 	reg(CoderFixed64, CoderVarint64, makeSizeMap(szFixed64, szVarintU64))
 	reg(CoderFixed64, CoderZigZag32, makeSizeMap(szFixed64, szZigZag32))
@@ -153,7 +153,7 @@ func init() {
 	reg(CoderFixed64, CoderString, makeSizeMap(szFixed64, szString))
 
 	// CoderBool keys (Go: bool)
-	reg(CoderBool, CoderVarint32, makeSizeMap(szBool, szVarintU32))
+	reg(CoderBool, CoderVarintU32, makeSizeMap(szBool, szVarintU32))
 	reg(CoderBool, CoderVarintI32, makeSizeMap(szBool, szVarintI32))
 	reg(CoderBool, CoderVarint64, makeSizeMap(szBool, szVarintU64))
 	reg(CoderBool, CoderZigZag32, makeSizeMap(szBool, szZigZag32))
@@ -165,7 +165,7 @@ func init() {
 	reg(CoderBool, CoderString, makeSizeMap(szBool, szString))
 
 	// CoderString keys (Go: string)
-	reg(CoderString, CoderVarint32, makeSizeMap(szString, szVarintU32))
+	reg(CoderString, CoderVarintU32, makeSizeMap(szString, szVarintU32))
 	reg(CoderString, CoderVarintI32, makeSizeMap(szString, szVarintI32))
 	reg(CoderString, CoderVarint64, makeSizeMap(szString, szVarintU64))
 	reg(CoderString, CoderZigZag32, makeSizeMap(szString, szZigZag32))

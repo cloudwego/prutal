@@ -29,7 +29,7 @@ func getCoderType(t TagType, kd reflect.Kind) wire.CoderType {
 		case reflect.Int32:
 			return wire.CoderVarintI32
 		case reflect.Uint32:
-			return wire.CoderVarint32
+			return wire.CoderVarintU32
 		case reflect.Int64, reflect.Uint64:
 			return wire.CoderVarint64
 		case reflect.Bool:
