@@ -87,18 +87,9 @@ Prutal aims to minimize code generation as much as possible while ensuring seria
 
 ## How to use Prutal with gRPC
 
-### Use Prutal without `prutalgen`
+Use [`pkg/grpccodec`](pkg/grpccodec) and pass [`grpccodec.PrutalCodec`](pkg/grpccodec/grpccodec.go) to the gRPC v1 codec APIs on both server and client.
 
-All you need is
-```go
-import (
-    _ "github.com/cloudwego/prutal/pkg/grpccodec"
-)
-```
-
-###  Use Prutal with `prutalgen`
-
-check [grpc test case](tests/cases/grpc) for a full example
+See [`pkg/grpccodec/README.md`](pkg/grpccodec/README.md) for usage details and [`tests/cases/grpc`](tests/cases/grpc) for a complete example.
 
 
 ## Contributing

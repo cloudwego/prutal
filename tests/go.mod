@@ -4,11 +4,8 @@ go 1.24.0
 
 replace github.com/cloudwego/prutal => ../
 
-replace github.com/cloudwego/prutal/pkg/grpccodec => ../pkg/grpccodec
-
 require (
 	github.com/cloudwego/prutal v0.0.0-20250312062053-d17030f08590
-	github.com/cloudwego/prutal/pkg/grpccodec v0.0.0-00010101000000-000000000000
 	github.com/go-faker/faker/v4 v4.6.0
 	google.golang.org/grpc v1.79.3
 	google.golang.org/protobuf v1.36.11

@@ -17,31 +17,28 @@
 package grpccodec
 
 import (
-	"google.golang.org/grpc/encoding"
-	_ "google.golang.org/grpc/encoding/proto" // force the pkg init before this package
-
 	"github.com/cloudwego/prutal"
 )
 
-func init() {
-	encoding.RegisterCodec(&protoCodec{})
-}
+// PrutalCodec is a protobuf codec backed by prutal.
+//
+// It intentionally works with raw byte slices so this package stays independent
+// from google.golang.org/grpc. Its method set matches the v1
+// google.golang.org/grpc/encoding.Codec interface, so applications can use it
+// directly with APIs expecting that shape or wrap it for CodecV2.
+type PrutalCodec struct{}
 
-// protoCodec implements google.golang.org/grpc/encoding.Codec
-type protoCodec struct{}
-
-var _ encoding.Codec = (*protoCodec)(nil)
-
-func (p *protoCodec) Marshal(v any) ([]byte, error) {
+// Marshal encodes a protobuf message into the standard binary wire format.
+func (PrutalCodec) Marshal(v any) ([]byte, error) {
 	return prutal.MarshalAppend(nil, v)
 }
 
-func (p *protoCodec) Unmarshal(data []byte, v any) error {
+// Unmarshal decodes a protobuf binary payload into v.
+func (PrutalCodec) Unmarshal(data []byte, v any) error {
 	return prutal.Unmarshal(data, v)
 }
 
-func (p *protoCodec) Name() string {
-	// same as https://pkg.go.dev/google.golang.org/grpc/encoding/proto
-	// so that we can overwrites the default proto codec
+// Name returns "proto" so this codec can replace gRPC's default protobuf codec.
+func (PrutalCodec) Name() string {
 	return "proto"
 }

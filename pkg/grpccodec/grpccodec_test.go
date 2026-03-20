@@ -26,7 +26,7 @@ func TestProtoCodec(t *testing.T) {
 	p0 := &TestStruct{"TestProtoCodec"}
 	p1 := &TestStruct{}
 
-	x := &protoCodec{}
+	x := PrutalCodec{}
 	b, err := x.Marshal(p0)
 	if err != nil {
 		t.Fatal(err)
@@ -37,5 +37,4 @@ func TestProtoCodec(t *testing.T) {
 	if p0.V != p1.V {
 		t.Fatalf("not equal: %q != %q", p0.V, p1.V)
 	}
-
 }
