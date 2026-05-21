@@ -129,11 +129,86 @@ message M {
 	assert.Equal(t, "M", m.Name)
 	assert.Equal(t, 1, len(m.Messages))
 	assert.Equal(t, "m", m.Messages[0].Name)
-	assert.Equal(t, "M_M", m.Messages[0].GoName)
+	assert.Equal(t, "MM", m.Messages[0].GoName) // GoCamelCase("M.m") = "MM"
 	assert.Equal(t, 1, len(m.Enums))
 	assert.Equal(t, "e", m.Enums[0].Name)
-	assert.Equal(t, "M_E", m.Enums[0].GoName)
+	assert.Equal(t, "ME", m.Enums[0].GoName) // GoCamelCase("M.e") = "ME"
 	assert.Equal(t, 1, len(m.Fields))
 	assert.Equal(t, "f", m.Fields[0].Name)
 	assert.Equal(t, "F", m.Fields[0].GoName)
+}
+
+func TestLoader_MessageNestedNaming(t *testing.T) {
+	p := loadTestProto(t, `
+package test;
+option go_package = "testmessage";
+
+message MyOuter {
+	message MyInner {}
+}
+
+message my_outer {
+	message my_inner {}
+}
+`)
+
+	// CamelCase names: dot before uppercase → underscore separator
+	m := p.Messages[0]
+	assert.Equal(t, "MyOuter", m.GoName)
+	assert.Equal(t, "MyOuter_MyInner", m.Messages[0].GoName)
+
+	// snake_case names: dot before lowercase → seamless join (matches protoc-gen-go)
+	m = p.Messages[1]
+	assert.Equal(t, "MyOuter", m.GoName) // GoCamelCase("my_outer") = "MyOuter"
+	assert.Equal(t, "MyOuterMyInner", m.Messages[0].GoName)
+}
+
+func TestLoader_MessageFieldConflict(t *testing.T) {
+	p := loadTestProto(t, `
+option go_package = "testconflict";
+message M {
+	string reset = 1;
+	string string = 2;
+	string descriptor = 3;
+	string marshal = 4;
+	string ok = 5;
+}
+`)
+
+	m := p.Messages[0]
+	// Fields conflicting with well-known method names get "_" suffix
+	assert.Equal(t, "Reset_", m.Fields[0].GoName)
+	assert.Equal(t, "String_", m.Fields[1].GoName)
+	assert.Equal(t, "Descriptor_", m.Fields[2].GoName)
+	assert.Equal(t, "Marshal_", m.Fields[3].GoName)
+	// Non-conflicting field stays unchanged
+	assert.Equal(t, "Ok", m.Fields[4].GoName)
+}
+
+func TestLoader_OneofWrapperTypeConflict(t *testing.T) {
+	p := loadTestProto(t, `
+option go_package = "testoneofconflict";
+message M {
+	message Foo {}
+	enum Bar { BAR0 = 0; }
+	oneof o {
+		string foo = 1;
+		string bar = 2;
+		string baz = 3;
+	}
+}
+`)
+
+	m := p.Messages[0]
+	f0, f1, f2 := m.Fields[0], m.Fields[1], m.Fields[2]
+	// Field GoNames are unaffected by wrapper-type collisions.
+	assert.Equal(t, "Foo", f0.GoName)
+	assert.Equal(t, "Bar", f1.GoName)
+	assert.Equal(t, "Baz", f2.GoName)
+	// Wrapper struct names get "_" suffix when colliding with a sibling
+	// nested message ("M_Foo") or enum ("M_Bar").
+	assert.Equal(t, "M_Foo_", f0.OneofStructName())
+	assert.Equal(t, "M_Bar_", f1.OneofStructName())
+	// Non-colliding wrapper stays unchanged.
+	assert.Equal(t, "M_Baz", f2.OneofStructName())
 }

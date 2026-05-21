@@ -50,6 +50,11 @@ type Field struct {
 	Oneof *Oneof // if not nil, it's from oneof
 	Msg   *Message
 	rule  antlr.ParserRuleContext
+
+	// oneofTypeSuffix is appended to the oneof wrapper struct name to
+	// resolve collisions with sibling nested message/enum GoNames. Only
+	// set for fields inside an oneof, during Message.resolve.
+	oneofTypeSuffix string
 }
 
 // String returns a string representation of the Field, including its number, Go name, and type(s).
@@ -260,7 +265,7 @@ func (f *Field) OneofStructName() string {
 	if f.Oneof == nil {
 		panic("not oneof")
 	}
-	return f.Msg.GoName + "_" + f.GoName
+	return f.Msg.GoName + "_" + f.GoName + f.oneofTypeSuffix
 }
 
 type fieldContext interface {

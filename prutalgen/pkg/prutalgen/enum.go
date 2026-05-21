@@ -103,10 +103,8 @@ func (e *Enum) genMapping() bool {
 
 func (e *Enum) resolve() {
 	p := e.Proto
-	e.GoName = strs.GoCamelCase(strings.TrimPrefix(e.Name, p.Package+"."))
-	if e.Msg != nil {
-		e.GoName = e.Msg.GoName + "_" + e.GoName
-	}
+	name := strings.TrimPrefix(e.FullName(), p.Package+".")
+	e.GoName = strs.GoCamelCase(name)
 	for _, f := range e.Fields {
 		if f.genNoPrefix() {
 			f.GoName = strs.GoCamelCase(f.Name)

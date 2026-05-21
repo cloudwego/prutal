@@ -189,10 +189,10 @@ enum myEnum1 {
 	assert.Equal(t, 1, len(ee))
 	e = ee[0]
 	assert.Equal(t, "eEnum", e.Name)
-	assert.Equal(t, "MyMsg_EEnum", e.GoName)
+	assert.Equal(t, "MyMsgEEnum", e.GoName) // GoCamelCase("myMsg.eEnum") = "MyMsgEEnum"
 	assert.Equal(t, 2, len(e.Fields))
 	assert.Equal(t, "ENUM0", e.Fields[0].Name)
-	assert.Equal(t, "MyMsg_ENUM0", e.Fields[0].GoName)
+	assert.Equal(t, "MyMsg_ENUM0", e.Fields[0].GoName) // enum value uses message GoName prefix
 	assert.Equal(t, int32(0), e.Fields[0].Value)
 	assert.Equal(t, "ENUM2", e.Fields[1].Name)
 	assert.Equal(t, "MyMsg_ENUM2", e.Fields[1].GoName)

@@ -117,10 +117,8 @@ func (m *Message) getType(name string) any {
 
 func (m *Message) resolve() {
 	p := m.Proto
-	m.GoName = strs.GoCamelCase(strings.TrimPrefix(m.Name, p.Package+"."))
-	if m.Msg != nil {
-		m.GoName = m.Msg.GoName + "_" + m.GoName // check duplicates?
-	}
+	name := strings.TrimPrefix(m.FullName(), p.Package+".")
+	m.GoName = strs.GoCamelCase(name)
 
 	// resolve declarations before fields,
 	// coz fields may use these declarations
@@ -134,6 +132,70 @@ func (m *Message) resolve() {
 
 	for _, x := range m.Fields {
 		x.resolve()
+	}
+
+	for _, o := range m.Oneofs {
+		o.GoName = strs.GoCamelCase(o.Name)
+	}
+
+	m.resolveFieldConflicts()
+	m.resolveOneofTypeConflicts()
+}
+
+// resolveOneofTypeConflicts ensures the wrapper struct name of each oneof
+// field does not collide with a sibling nested message or enum GoName by
+// appending '_' to the wrapper name (not the field's GoName).
+//
+// Mirrors the second pass in protoc-gen-go's protogen.newMessage.
+func (m *Message) resolveOneofTypeConflicts() {
+	nested := make(map[string]bool, len(m.Messages)+len(m.Enums))
+	for _, x := range m.Messages {
+		nested[x.GoName] = true
+	}
+	for _, x := range m.Enums {
+		nested[x.GoName] = true
+	}
+	for _, f := range m.Fields {
+		if f.Oneof == nil {
+			continue
+		}
+		for nested[f.OneofStructName()] {
+			f.oneofTypeSuffix += "_"
+		}
+	}
+}
+
+// resolveFieldConflicts appends '_' to field and oneof GoNames that collide
+// with well-known method names attached to a generated message type, or with
+// the 'Get*' getter of another field.
+//
+// Mirrors the algorithm in protoc-gen-go's protogen.newMessage. Any change to
+// the set of names below is a potential incompatible API change, because it
+// may change generated field names.
+func (m *Message) resolveFieldConflicts() {
+	usedNames := map[string]bool{
+		"Reset":               true,
+		"String":              true,
+		"ProtoMessage":        true,
+		"Marshal":             true,
+		"Unmarshal":           true,
+		"ExtensionRangeArray": true,
+		"ExtensionMap":        true,
+		"Descriptor":          true,
+	}
+	for _, f := range m.Fields {
+		for usedNames[f.GoName] || usedNames["Get"+f.GoName] {
+			f.GoName += "_"
+		}
+		usedNames[f.GoName] = true
+		usedNames["Get"+f.GoName] = true
+		if f.Oneof != nil && f.Oneof.Fields[0] == f {
+			o := f.Oneof
+			for usedNames[o.GoName] {
+				o.GoName += "_"
+			}
+			usedNames[o.GoName] = true
+		}
 	}
 }
 

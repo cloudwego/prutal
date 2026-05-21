@@ -22,7 +22,8 @@ import (
 )
 
 type Oneof struct {
-	Name string
+	Name   string
+	GoName string
 
 	Options Options
 
@@ -31,11 +32,14 @@ type Oneof struct {
 }
 
 func (o *Oneof) FieldName() string {
+	if o.GoName != "" {
+		return o.GoName
+	}
 	return strs.GoCamelCase(o.Name)
 }
 
 func (o *Oneof) FieldType() string {
-	return "is" + o.Msg.GoName + "_" + strs.GoCamelCase(o.Name)
+	return "is" + o.Msg.GoName + "_" + o.FieldName()
 }
 
 func (x *protoLoader) EnterOneof(c *parser.OneofContext) {
