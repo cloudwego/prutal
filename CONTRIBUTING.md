@@ -4,11 +4,11 @@
 We use GitHub for our codebase. You can start by reading [How To Pull Request](https://docs.github.com/en/github/collaborating-with-issues-and-pull-requests/about-pull-requests).
 
 ## Branch Organization
-We use [git-flow](https://nvie.com/posts/a-successful-git-branching-model/) as our branch organization, as known as [FDD](https://en.wikipedia.org/wiki/Feature-driven_development)
+We use the `main` branch as our development branch. Create your feature or fix branch from `main`, and submit pull requests back to `main`.
 
 ## Bugs
 ### 1. How to Find Known Issues
-We are using [Github Issues](https://github.com/cloudwego/{project_name}/issues) for our public bugs. We keep a close eye on this and try to make it clear when we have an internal fix in progress. Before filing a new task, try to make sure your problem doesn’t already exist.
+We are using [Github Issues](https://github.com/cloudwego/prutal/issues) for our public bugs. We keep a close eye on this and try to make it clear when we have an internal fix in progress. Before filing a new task, try to make sure your problem doesn’t already exist.
 
 ### 2. Reporting New Issues
 Providing a reduced test code is a recommended way for reporting issues. Then can place in:
@@ -23,12 +23,12 @@ Please do not report the safe disclosure of bugs to public issues. Contact us by
 
 ## Submit a Pull Request
 Before you submit your Pull Request (PR) consider the following guidelines:
-1. Search [GitHub](https://github.com/cloudwego/{project_name}/pulls) for an open or closed PR that relates to your submission. You don't want to duplicate existing efforts.
+1. Search [GitHub](https://github.com/cloudwego/prutal/pulls) for an open or closed PR that relates to your submission. You don't want to duplicate existing efforts.
 2. Be sure that an issue describes the problem you're fixing, or documents the design for the feature you'd like to add. Discussing the design upfront helps to ensure that we're ready to accept your work.
-3. [Fork](https://docs.github.com/en/github/getting-started-with-github/fork-a-repo) the cloudwego {project_name} repo.
+3. [Fork](https://docs.github.com/en/github/getting-started-with-github/fork-a-repo) the cloudwego prutal repo.
 4. In your forked repository, make your changes in a new git branch:
     ```
-    git checkout -b my-fix-branch develop
+    git checkout -b my-fix-branch main
     ```
 5. Create your patch, including appropriate test cases.
 6. Follow our [Style Guides](#code-style-guides).
@@ -38,7 +38,7 @@ Before you submit your Pull Request (PR) consider the following guidelines:
     ```
     git push origin my-fix-branch
     ```
-9. In GitHub, send a pull request to `{project_name}:develop`
+9. In GitHub, send a pull request to `prutal:main`
 
 ## Contribution Prerequisites
 - Our development environment keeps up with [Go Official](https://golang.org/project/).
