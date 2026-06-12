@@ -389,13 +389,22 @@ func parseStruct(rt reflect.Type) (s *StructDesc, err error) {
 		if !ok {
 			continue
 		}
+		// Must be a direct field. FieldByName also matches promoted fields of
+		// embedded structs, whose Offset is relative to the embedded struct,
+		// not rt; applying it to the outer base would corrupt memory.
+		if len(f.Index) != 1 {
+			continue
+		}
+		// Only []byte or *[]byte may be used as unknown-fields storage; any
+		// other type would be misinterpreted as a slice header by the decoder.
 		ft := f.Type
-		if ft != bytesType && // not []byte nor *[]byte?
-			ft.Kind() == reflect.Pointer && ft.Elem() != bytesType {
+		isBytes := ft == bytesType
+		isBytesPtr := ft.Kind() == reflect.Pointer && ft.Elem() == bytesType
+		if !isBytes && !isBytesPtr {
 			continue
 		}
 		s.HasUnknownFields = true
-		s.UnknownFieldsPointer = ft.Kind() == reflect.Pointer
+		s.UnknownFieldsPointer = isBytesPtr
 		s.UnknownFieldsOffset = f.Offset
 		break
 	}
