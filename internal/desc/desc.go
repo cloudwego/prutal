@@ -278,6 +278,20 @@ func (f *FieldDesc) checkTypeMatch() error {
 		if !t.IsSlice && t.Kind != reflect.Map {
 			return fmt.Errorf("repeated field is not slice or map")
 		}
+		if t.IsSlice {
+			// The element type (after at most one pointer indirection) must be a
+			// scalar/struct, not another slice or map. Otherwise RealKind would
+			// flatten e.g. [][]int32 to int32 and pass validation, and the decoder
+			// would write a scalar slice header into a slice-of-slice element,
+			// causing type confusion.
+			el := t.V
+			if el.IsPointer {
+				el = el.V
+			}
+			if el.IsSlice || el.Kind == reflect.Map {
+				return fmt.Errorf("unsupported nested repeated field type %s", t.T)
+			}
+		}
 	}
 
 	if err := IsFieldTypeMatchReflectKind(f.TagType, t.RealKind()); err != nil {
