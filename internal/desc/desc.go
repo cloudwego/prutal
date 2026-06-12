@@ -384,7 +384,7 @@ func parseStruct(rt reflect.Type) (s *StructDesc, err error) {
 	s.mFields0 = make([]*FieldDesc, maxn+1)
 	s.mFields1 = make(map[int32]*FieldDesc, k)
 	for i, f := range s.Fields {
-		if f.ID < maxDirectFieldMapID {
+		if f.ID <= maxDirectFieldMapID {
 			s.mFields0[int(f.ID)] = f
 		} else {
 			s.mFields1[f.ID] = f
