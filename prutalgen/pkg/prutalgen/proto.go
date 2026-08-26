@@ -132,12 +132,202 @@ func (p *Proto) getType(name string) any {
 		if !x.Public {
 			continue
 		}
-		if t := x.Proto.getType(name); t != nil {
+		if t := x.getType(name); t != nil {
 			return t
 		}
 	}
 	if name1, ok := trimPathPrefix(name, p.Package); ok {
 		return p.getType(name1) // try again without package prefix
+	}
+	return nil
+}
+
+func (p *Proto) getTypeByFullName(name string) any {
+	if p.Package != "" {
+		var ok bool
+		name, ok = trimPathPrefix(name, p.Package)
+		if !ok {
+			return nil
+		}
+	}
+	for _, m := range p.Messages {
+		if typ := m.getType(name); typ != nil {
+			return typ
+		}
+	}
+	for _, e := range p.Enums {
+		if e.Name == name {
+			return e
+		}
+	}
+	return nil
+}
+
+func (p *Proto) hasServiceFullName(name string) bool {
+	for _, s := range p.Services {
+		if fullProtoName(p.Package, s.Name) == name {
+			return true
+		}
+	}
+	return false
+}
+
+func (p *Proto) hasSymbolFullName(name string) bool {
+	if name != "" && (p.Package == name || strings.HasPrefix(p.Package, name+".")) {
+		return true
+	}
+	hasEnumSymbol := func(e *Enum) bool {
+		if e.FullName() == name {
+			return true
+		}
+		scope := parentProtoName(e.FullName())
+		for _, value := range e.Fields {
+			if fullProtoName(scope, value.Name) == name {
+				return true
+			}
+		}
+		return false
+	}
+
+	var hasMessageSymbol func(*Message) bool
+	hasMessageSymbol = func(m *Message) bool {
+		messageName := m.FullName()
+		if messageName == name {
+			return true
+		}
+		for _, field := range m.Fields {
+			if fullProtoName(messageName, field.Name) == name {
+				return true
+			}
+		}
+		for _, oneof := range m.Oneofs {
+			if fullProtoName(messageName, oneof.Name) == name {
+				return true
+			}
+		}
+		for _, e := range m.Enums {
+			if hasEnumSymbol(e) {
+				return true
+			}
+		}
+		for _, nested := range m.Messages {
+			if hasMessageSymbol(nested) {
+				return true
+			}
+		}
+		return false
+	}
+
+	for _, e := range p.Enums {
+		if hasEnumSymbol(e) {
+			return true
+		}
+	}
+	for _, m := range p.Messages {
+		if hasMessageSymbol(m) {
+			return true
+		}
+	}
+	for _, s := range p.Services {
+		serviceName := fullProtoName(p.Package, s.Name)
+		if serviceName == name {
+			return true
+		}
+		for _, method := range s.Methods {
+			if fullProtoName(serviceName, method.Name) == name {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func validateProtoSymbols(protos []*Proto) error {
+	packageScopes := make(map[string]bool)
+	for _, p := range protos {
+		for name := p.Package; name != ""; name = parentProtoName(name) {
+			packageScopes[name] = true
+		}
+	}
+
+	type declaration struct {
+		kind  string
+		proto *Proto
+	}
+	declarations := make(map[string]declaration)
+	register := func(name, kind string, p *Proto) error {
+		if packageScopes[name] {
+			return fmt.Errorf("%s %q in %s conflicts with a package name", kind, name, p.ProtoFile)
+		}
+		if previous, ok := declarations[name]; ok {
+			return fmt.Errorf("%s %q in %s is already defined as a %s in %s",
+				kind, name, p.ProtoFile, previous.kind, previous.proto.ProtoFile)
+		}
+		declarations[name] = declaration{kind: kind, proto: p}
+		return nil
+	}
+	registerEnum := func(e *Enum, p *Proto) error {
+		if err := register(e.FullName(), "enum", p); err != nil {
+			return err
+		}
+		scope := parentProtoName(e.FullName())
+		for _, value := range e.Fields {
+			if err := register(fullProtoName(scope, value.Name), "enum value", p); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	var registerMessage func(*Message, *Proto) error
+	registerMessage = func(m *Message, p *Proto) error {
+		if err := register(m.FullName(), "message", p); err != nil {
+			return err
+		}
+		for _, field := range m.Fields {
+			if err := register(fullProtoName(m.FullName(), field.Name), "field", p); err != nil {
+				return err
+			}
+		}
+		for _, oneof := range m.Oneofs {
+			if err := register(fullProtoName(m.FullName(), oneof.Name), "oneof", p); err != nil {
+				return err
+			}
+		}
+		for _, e := range m.Enums {
+			if err := registerEnum(e, p); err != nil {
+				return err
+			}
+		}
+		for _, nested := range m.Messages {
+			if err := registerMessage(nested, p); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	for _, p := range protos {
+		for _, e := range p.Enums {
+			if err := registerEnum(e, p); err != nil {
+				return err
+			}
+		}
+		for _, m := range p.Messages {
+			if err := registerMessage(m, p); err != nil {
+				return err
+			}
+		}
+		for _, s := range p.Services {
+			serviceName := fullProtoName(p.Package, s.Name)
+			if err := register(serviceName, "service", p); err != nil {
+				return err
+			}
+			for _, method := range s.Methods {
+				if err := register(fullProtoName(serviceName, method.Name), "method", p); err != nil {
+					return err
+				}
+			}
+		}
 	}
 	return nil
 }
@@ -243,5 +433,10 @@ func (x *protoLoader) ExitImportStatement(c *parser.ImportStatementContext) {
 		x.Fatalf("%s - import syntax err: %s", getTokenPos(c), err)
 	}
 	imp.Proto = x.loadProto(importpath)
+	for _, previous := range p.Imports {
+		if previous.Proto == imp.Proto {
+			x.Fatalf("%s - import %q was listed twice", getTokenPos(c), importpath)
+		}
+	}
 	p.Imports = append(p.Imports, imp)
 }

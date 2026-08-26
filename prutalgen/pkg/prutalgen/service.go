@@ -17,6 +17,8 @@
 package prutalgen
 
 import (
+	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/cloudwego/prutal/prutalgen/internal/parser"
@@ -45,7 +47,20 @@ func (s *Service) resolve() {
 	}
 }
 
-func (s *Service) verify() error { return nil }
+func (s *Service) verify() error {
+	var errs []error
+	for _, method := range s.Methods {
+		if !method.Request.IsMessage() {
+			errs = append(errs, fmt.Errorf(
+				"method %q request type %q is not a message type", method.Name, method.Request.Name))
+		}
+		if !method.Return.IsMessage() {
+			errs = append(errs, fmt.Errorf(
+				"method %q return type %q is not a message type", method.Name, method.Return.Name))
+		}
+	}
+	return errors.Join(errs...)
+}
 
 type Method struct {
 	HeadComment   string

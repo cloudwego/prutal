@@ -65,3 +65,69 @@ func TestProto(t *testing.T) {
 	assert.True(t, p.getType("x") == nil)
 
 }
+
+func TestLoaderRejectsDuplicateImport(t *testing.T) {
+	dir := t.TempDir()
+	_ = writeFileUnderDir(t, dir, "a.proto", []byte(
+		`option go_package = "mod/a"; message A {}`,
+	))
+	_ = writeFileUnderDir(t, dir, "b.proto", []byte(
+		`option go_package = "mod/b"; import "a.proto"; import public "./a.proto";`,
+	))
+
+	x := NewLoader([]string{dir}, nil)
+	x.SetLogger(&expectLogger{t: t, FatalContains: `was listed twice`})
+	x.LoadProto("b.proto")
+	t.Fatal("never goes here. logger Fatalf in LoadProto")
+}
+
+func TestLoaderRejectsDuplicateSymbolsAcrossRoots(t *testing.T) {
+	dir := t.TempDir()
+	payload := []byte(`package dup; option go_package = "example.com/dup"; message T {}`)
+	_ = writeFileUnderDir(t, dir, "a.proto", payload)
+	_ = writeFileUnderDir(t, dir, "b.proto", payload)
+
+	x := NewLoader([]string{dir}, nil)
+	x.SetLogger(&expectLogger{t: t, FatalContains: `"dup.T"`})
+	x.LoadProtos([]string{"a.proto", "b.proto"})
+	t.Fatal("never goes here. logger Fatalf in LoadProtos")
+}
+
+func TestValidateProtoSymbols(t *testing.T) {
+	message := func(p *Proto, name string) *Message {
+		m := &Message{Name: name, Proto: p}
+		p.Messages = append(p.Messages, m)
+		return m
+	}
+
+	a := &Proto{ProtoFile: "a.proto", Package: "clash"}
+	b := &Proto{ProtoFile: "b.proto", Package: "clash"}
+	message(a, "T")
+	message(b, "T")
+	assert.ErrorContains(t, validateProtoSymbols([]*Proto{a, b}), "already defined")
+
+	a = &Proto{ProtoFile: "a.proto", Package: "foo"}
+	b = &Proto{ProtoFile: "b.proto", Package: "foo.bar"}
+	message(a, "bar")
+	assert.ErrorContains(t, validateProtoSymbols([]*Proto{a, b}), "conflicts with a package name")
+
+	a = &Proto{ProtoFile: "a.proto", Package: "shared"}
+	b = &Proto{ProtoFile: "b.proto", Package: "shared"}
+	message(a, "A")
+	message(b, "B")
+	assert.NoError(t, validateProtoSymbols([]*Proto{a, b}))
+
+	a = &Proto{ProtoFile: "a.proto", Package: "shared"}
+	b = &Proto{ProtoFile: "b.proto", Package: "shared"}
+	a.Enums = []*Enum{{Name: "A", Proto: a, Fields: []*EnumField{{Name: "VALUE"}}}}
+	b.Enums = []*Enum{{Name: "B", Proto: b, Fields: []*EnumField{{Name: "VALUE"}}}}
+	assert.ErrorContains(t, validateProtoSymbols([]*Proto{a, b}), `enum value "shared.VALUE"`)
+
+	a = &Proto{ProtoFile: "a.proto", Package: "shared"}
+	m := message(a, "M")
+	m.Fields = []*Field{{Name: "VALUE"}}
+	m.Enums = []*Enum{{
+		Name: "E", Proto: a, Msg: m, Fields: []*EnumField{{Name: "VALUE"}},
+	}}
+	assert.ErrorContains(t, validateProtoSymbols([]*Proto{a}), `enum value "shared.M.VALUE"`)
+}

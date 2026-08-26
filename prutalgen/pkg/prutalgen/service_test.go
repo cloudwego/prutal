@@ -59,3 +59,19 @@ service echo_service {
 	assert.True(t, rpc.ReturnStream)
 
 }
+
+func TestServiceRejectsEnumTypes(t *testing.T) {
+	enumType := &Type{Name: "E", typ: &Enum{Name: "E"}}
+	service := &Service{
+		Name: "S",
+		Methods: []*Method{{
+			Name:    "M",
+			Request: enumType,
+			Return:  enumType,
+		}},
+	}
+
+	err := service.verify()
+	assert.ErrorContains(t, err, `method "M" request type "E" is not a message type`)
+	assert.ErrorContains(t, err, `method "M" return type "E" is not a message type`)
+}

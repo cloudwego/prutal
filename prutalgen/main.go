@@ -56,8 +56,11 @@ func main() {
 	if len(args) == 0 {
 		println("WARN: no proto file provided")
 	}
-	for _, a := range args {
-		p := x.LoadProto(filepath.Clean(a))[0]
+	files := make([]string, len(args))
+	for i, a := range args {
+		files[i] = filepath.Clean(a)
+	}
+	for _, p := range x.LoadProtos(files) {
 		if err := g.Gen(p, opts.GenPathType(), out); err != nil {
 			p.Fatalf("generate code err: %s", err)
 		}

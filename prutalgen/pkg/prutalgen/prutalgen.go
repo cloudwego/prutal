@@ -47,7 +47,11 @@ type protoLoader struct {
 
 type Loader interface {
 	SetLogger(LoggerIface)
+	// LoadProto loads one root and returns its complete import graph.
 	LoadProto(file string) []*Proto
+	// LoadProtos loads multiple roots as one invocation and returns the roots
+	// in input order.
+	LoadProtos(files []string) []*Proto
 }
 
 func NewLoader(includes []string, proto2gopkg map[string]string) Loader {
@@ -91,9 +95,24 @@ func (x *protoLoader) searchProtoFile(file string) string {
 }
 
 func (x *protoLoader) LoadProto(file string) []*Proto {
+	x.loadRoots([]string{file})
+	return x.protos
+}
+
+func (x *protoLoader) LoadProtos(files []string) []*Proto {
+	return x.loadRoots(files)
+}
+
+func (x *protoLoader) loadRoots(files []string) []*Proto {
 	x.reset()
-	_ = x.loadProto(file)
+	roots := make([]*Proto, 0, len(files))
+	for _, file := range files {
+		roots = append(roots, x.loadProto(file))
+	}
 	if err := validateGoPackageConsistency(x.protos); err != nil {
+		x.Fatalf("%s", err)
+	}
+	if err := validateProtoSymbols(x.protos); err != nil {
 		x.Fatalf("%s", err)
 	}
 	x.protos = sortProtoFiles(x.protos)       // sort by topological order
@@ -104,7 +123,7 @@ func (x *protoLoader) LoadProto(file string) []*Proto {
 			x.Fatalf("proto %s verify err: %s", p.ProtoFile, err)
 		}
 	}
-	return x.protos
+	return roots
 }
 
 func (x *protoLoader) reset() {

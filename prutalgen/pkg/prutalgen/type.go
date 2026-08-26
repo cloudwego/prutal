@@ -131,12 +131,13 @@ func (t *Type) IsEnum() bool {
 
 func (t *Type) resolve(allowScalar bool) {
 	var p *Proto
-	var m *Message // for checking embedded types
+	var scope string
 	if t.f != nil {
-		m = t.f.Msg
-		p = m.Proto
+		p = t.f.Msg.Proto
+		scope = t.f.Msg.FullName()
 	} else if t.m != nil {
 		p = t.m.Service.Proto
+		scope = fullProtoName(p.Package, t.m.Service.Name)
 	}
 
 	t.p = nil
@@ -149,65 +150,129 @@ func (t *Type) resolve(allowScalar bool) {
 		}
 	}
 
-	if m != nil {
-		if v := m.getType(t.Name); v != nil {
-			t.typ = v
+	visible := visibleProtos(p)
+	ref := t.Name
+	if strings.HasPrefix(ref, ".") {
+		ref = strings.TrimPrefix(ref, ".")
+		if typ, owner := findVisibleType(visible, ref); typ != nil {
+			t.setResolvedType(p, owner, typ)
 			return
 		}
+		t.typeNotFound(p)
+		return
 	}
 
-	//  (DOT)? (ident DOT)* ident
+	for {
+		candidate := fullProtoName(scope, ref)
+		if typ, owner := findVisibleType(visible, candidate); typ != nil {
+			t.setResolvedType(p, owner, typ)
+			return
+		}
+		// RPC types use symbol lookup before checking that the symbol is a
+		// message. Field types ignore non-type symbols and keep walking outward.
+		if t.m != nil && hasVisibleSymbol(visible, candidate) {
+			t.typeNotFound(p)
+			return
+		}
 
-	// search Message
-	if m != nil {
-		for x := m; x != nil; x = x.Msg {
-			t.typ = x.getType(t.Name)
-			if t.typ != nil {
+		// For compound names, finding the first component as an aggregate fixes
+		// the lookup scope even when the remaining components do not resolve.
+		if first, _, compound := strings.Cut(ref, "."); compound {
+			prefix := fullProtoName(scope, first)
+			if isVisibleAggregate(visible, prefix) {
+				t.typeNotFound(p)
 				return
 			}
-			for _, e := range x.Enums {
-				if e.Name == t.Name {
-					t.typ = e
-					return
-				}
-			}
-			for _, m := range x.Messages {
-				if v := m.getType(t.Name); v != nil {
-					t.typ = v
-					return
-				}
-			}
 		}
+		if scope == "" {
+			break
+		}
+		scope = parentProtoName(scope)
 	}
+	t.typeNotFound(p)
+}
 
-	// search proto and imports
-	protos := make([]*Proto, 0, len(p.Imports)+1)
-	protos = append(protos, p) // always check p
-	for _, x := range p.Imports {
-		if p.Package == x.Package { // same package
-			protos = append(protos, x.Proto)
-		}
+func (t *Type) setResolvedType(current, owner *Proto, typ any) {
+	t.typ = typ
+	if owner.GoImport != current.GoImport {
+		t.p = owner
 	}
+}
 
-	// if name starts with "." it means the type is in local package
-	if !strings.HasPrefix(t.Name, ".") {
-		for _, x := range p.Imports {
-			if hasPathPrefix(t.Name, x.Package) {
-				protos = append(protos, x.Proto)
-			}
-		}
-	} else {
-		// trim "." for searching type
-		t.Name = strings.TrimLeft(t.Name, ".")
+func (t *Type) typeNotFound(p *Proto) {
+	line := 0
+	if t.rule != nil && t.rule.GetStart() != nil {
+		line = t.rule.GetStart().GetLine()
 	}
-	for _, x := range protos {
-		t.typ = x.getType(t.Name)
-		if t.typ != nil {
-			if x.GoImport != p.GoImport {
-				t.p = x
-			}
-			return
+	p.Fatalf("line %d: type %q not found.", line, t.Name)
+}
+
+func findVisibleType(protos []*Proto, fullName string) (any, *Proto) {
+	for _, p := range protos {
+		if typ := p.getTypeByFullName(fullName); typ != nil {
+			return typ, p
 		}
 	}
-	p.Fatalf("line %d: type %q not found.", t.rule.GetStart().GetLine(), t.Name)
+	return nil, nil
+}
+
+func hasVisibleSymbol(protos []*Proto, fullName string) bool {
+	for _, p := range protos {
+		if p.hasSymbolFullName(fullName) {
+			return true
+		}
+	}
+	return false
+}
+
+func isVisibleAggregate(protos []*Proto, fullName string) bool {
+	for _, p := range protos {
+		if p.getTypeByFullName(fullName) != nil || p.hasServiceFullName(fullName) {
+			return true
+		}
+		if p.Package == fullName || strings.HasPrefix(p.Package, fullName+".") {
+			return true
+		}
+	}
+	return false
+}
+
+// visibleProtos returns the current file, its direct imports, and the public
+// import closure reachable from every direct import.
+func visibleProtos(p *Proto) []*Proto {
+	ret := []*Proto{p}
+	seen := map[*Proto]bool{p: true}
+	var addPublic func(*Proto)
+	addPublic = func(current *Proto) {
+		if !seen[current] {
+			seen[current] = true
+			ret = append(ret, current)
+		}
+		for _, imp := range current.Imports {
+			if imp.Public && !seen[imp.Proto] {
+				addPublic(imp.Proto)
+			}
+		}
+	}
+	for _, imp := range p.Imports {
+		addPublic(imp.Proto)
+	}
+	return ret
+}
+
+func fullProtoName(scope, name string) string {
+	if scope == "" {
+		return name
+	}
+	if name == "" {
+		return scope
+	}
+	return scope + "." + name
+}
+
+func parentProtoName(name string) string {
+	if i := strings.LastIndexByte(name, '.'); i >= 0 {
+		return name[:i]
+	}
+	return ""
 }
