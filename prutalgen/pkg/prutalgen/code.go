@@ -48,6 +48,16 @@ func NewGoCodeGen() *GoCodeGen {
 
 var shellsafeRE = regexp.MustCompile(`^[a-zA-Z0-9\-_.=/]+$`)
 
+// trailingComment matches protoc-gen-go: multi-line comments are omitted
+// because they cannot be rendered unambiguously after a declaration.
+func trailingComment(s string) string {
+	s = strings.TrimSuffix(s, "\n")
+	if strings.Contains(s, "\n") {
+		return ""
+	}
+	return s
+}
+
 func argsQuote(args []string) string {
 	args = append([]string(nil), args...)
 	for i, a := range args {
@@ -110,21 +120,24 @@ func (g *GoCodeGen) Gen(p *Proto, gt GenPathType, out string) error {
 }
 
 func (g *GoCodeGen) ProtoGen(p *Proto, w *CodeWriter) {
-	for _, e := range p.Enums {
+	allEnums := append([]*Enum(nil), p.Enums...)
+	allMessages := append([]*Message(nil), p.Messages...)
+	var walkMessages func([]*Message)
+	walkMessages = func(messages []*Message) {
+		for _, m := range messages {
+			allEnums = append(allEnums, m.Enums...)
+			allMessages = append(allMessages, m.Messages...)
+			walkMessages(m.Messages)
+		}
+	}
+	walkMessages(p.Messages)
+
+	for _, e := range allEnums {
 		w.F("")
 		g.EnumGen(e, w)
 	}
 
-	// always generate enums before messages
-	// same order as protobuf
-	for _, m := range p.Messages {
-		for _, e := range m.Enums {
-			w.F("")
-			g.EnumGen(e, w)
-		}
-	}
-
-	for _, m := range p.Messages {
+	for _, m := range allMessages {
 		w.F("")
 		g.MessageGen(m, w)
 	}
@@ -134,7 +147,7 @@ func (g *GoCodeGen) EnumGen(e *Enum, w *CodeWriter) {
 	if e.HeadComment != "" {
 		w.F("%s", e.HeadComment)
 	}
-	w.F("type %s int32"+e.InlineComment, e.GoName)
+	w.F("type %s int32", e.GoName)
 	w.F("")
 	if len(e.Fields) > 0 {
 		w.F("const (")
@@ -145,7 +158,7 @@ func (g *GoCodeGen) EnumGen(e *Enum, w *CodeWriter) {
 				}
 				w.F("%s", f.HeadComment)
 			}
-			w.F("%s %s = %d %s", f.GoName, e.GoName, f.Value, f.InlineComment)
+			w.F("%s %s = %d %s", f.GoName, e.GoName, f.Value, trailingComment(f.InlineComment))
 		}
 		w.F(")")
 	}
@@ -212,7 +225,7 @@ func (g *GoCodeGen) MessageGen(m *Message, w *CodeWriter) {
 	if m.genUnknownFields() {
 		w.F("unknownFields []byte `json:\"-\"`")
 	}
-	w.F("} %s", m.InlineComment)
+	w.F("}")
 
 	// func Reset
 	w.F("\nfunc (x *%s) Reset() { *x = %s{} }", m.GoName, m.GoName)
@@ -282,12 +295,6 @@ SkipGetter:
 		g.OneofGen(o, w)
 	}
 
-	// always generate embedded messasges after main message
-	// same order as protobuf
-	for _, x := range m.Messages {
-		w.F("")
-		g.MessageGen(x, w)
-	}
 }
 
 func (g *GoCodeGen) FieldStructTag(f *Field) []byte {
@@ -352,7 +359,7 @@ func (g *GoCodeGen) FieldGen(f *Field, w *CodeWriter) {
 	if f.HeadComment != "" {
 		w.F("%s", f.HeadComment)
 	}
-	w.F("%s %s `%s` %s", f.GoName, f.GoTypeName(), g.FieldStructTag(f), f.InlineComment)
+	w.F("%s %s `%s` %s", f.GoName, f.GoTypeName(), g.FieldStructTag(f), trailingComment(f.InlineComment))
 	if f.Type.IsExternalType() {
 		w.UsePkg(f.Type.GoImport(), "")
 	}

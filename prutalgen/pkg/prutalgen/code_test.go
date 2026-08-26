@@ -127,3 +127,79 @@ func TestGenCode(t *testing.T) {
 	assertLine("prutal.MarshalAppend")
 	assertLine("prutal.Unmarshal")
 }
+
+func TestProtoGenFlattenedDeclarationOrder(t *testing.T) {
+	p := &Proto{GoPackage: "test", Directives: Directives{prutalNoEnumMapping}}
+	outer := &Message{GoName: "Outer", Proto: p}
+	other := &Message{GoName: "Other", Proto: p}
+	inner := &Message{GoName: "OuterInner", Msg: outer, Proto: p}
+	deep := &Message{GoName: "OuterInnerDeep", Msg: inner, Proto: p}
+	outer.Messages = []*Message{inner}
+	inner.Messages = []*Message{deep}
+	p.Messages = []*Message{outer, other}
+
+	p.Enums = []*Enum{{GoName: "TopEnum", Proto: p}}
+	outer.Enums = []*Enum{{GoName: "OuterEnum", Msg: outer, Proto: p}}
+	inner.Enums = []*Enum{{GoName: "InnerEnum", Msg: inner, Proto: p}}
+	deep.Enums = []*Enum{{GoName: "DeepEnum", Msg: deep, Proto: p}}
+
+	w := NewCodeWriter("", p.GoPackage)
+	NewGoCodeGen().ProtoGen(p, w)
+	src := string(w.Bytes())
+
+	last := -1
+	for _, declaration := range []string{
+		"type TopEnum int32",
+		"type OuterEnum int32",
+		"type InnerEnum int32",
+		"type DeepEnum int32",
+		"type Outer struct",
+		"type Other struct",
+		"type OuterInner struct",
+		"type OuterInnerDeep struct",
+	} {
+		pos := strings.Index(src, declaration)
+		assert.True(t, pos > last, declaration)
+		last = pos
+	}
+}
+
+func TestProtoGenTrailingComments(t *testing.T) {
+	p := &Proto{GoPackage: "test", Directives: Directives{prutalNoEnumMapping}}
+	e := &Enum{
+		GoName:        "E",
+		InlineComment: "// enum trailing must be omitted",
+		Fields: []*EnumField{
+			{GoName: "E_ZERO", Value: 0, InlineComment: "// value is 100% valid"},
+			{GoName: "E_ONE", Value: 1, InlineComment: "/* enum value multi\nline */"},
+		},
+		Proto: p,
+	}
+	m := &Message{
+		GoName:        "M",
+		InlineComment: "// message trailing must be omitted",
+		Fields: []*Field{
+			{GoName: "A", Type: &Type{Name: "string"}, FieldNumber: 1, InlineComment: "// field is 100% valid"},
+			{GoName: "B", Type: &Type{Name: "string"}, FieldNumber: 2, InlineComment: "/* field multi\nline */"},
+		},
+		Proto: p,
+	}
+	for _, f := range m.Fields {
+		f.Msg = m
+	}
+	p.Enums = []*Enum{e}
+	p.Messages = []*Message{m}
+
+	w := NewCodeWriter("", p.GoPackage)
+	NewGoCodeGen().ProtoGen(p, w)
+	src := string(w.Bytes())
+	_, err := format.Source([]byte(src))
+	assert.NoError(t, err)
+	assert.True(t, strings.Contains(src, "E_ZERO E = 0 // value is 100% valid"))
+	assert.True(t, strings.Contains(src, "A string `protobuf:"))
+	assert.True(t, strings.Contains(src, "// field is 100% valid"))
+	assert.False(t, strings.Contains(src, "enum trailing must be omitted"))
+	assert.False(t, strings.Contains(src, "message trailing must be omitted"))
+	assert.False(t, strings.Contains(src, "enum value multi"))
+	assert.False(t, strings.Contains(src, "field multi"))
+}

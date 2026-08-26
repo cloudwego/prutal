@@ -99,3 +99,19 @@ service echo_service {
 	assert.Equal(t, "o6", v)
 
 }
+
+func TestLoaderFeatureAggregateOption(t *testing.T) {
+	p := loadTestProto(t, `
+edition = "2023";
+option go_package = "example.com/features";
+option features = {
+  enum_type: CLOSED
+  repeated_field_encoding: PACKED;
+};
+`)
+
+	assert.True(t, p.Options.Is(f_enum_type, "CLOSED"))
+	assert.True(t, p.Options.Is(f_repeated_field_encoding, "PACKED"))
+	_, ok := p.Options.Get("features")
+	assert.True(t, ok, "aggregate option must be preserved")
+}

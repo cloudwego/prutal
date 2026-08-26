@@ -60,6 +60,7 @@ func (oo Options) Is(name string, value string) bool {
 }
 
 func (x *protoLoader) ExitOptionStatement(c *parser.OptionStatementContext) {
+	name := c.OptionName().GetText()
 	v, err := unmarshalConst(c.Constant().GetText())
 	if err != nil {
 		x.Fatalf("%s - option syntax err: %s", getTokenPos(c), err)
@@ -68,36 +69,51 @@ func (x *protoLoader) ExitOptionStatement(c *parser.OptionStatementContext) {
 	// name may include extensions like (gogoproto.goproto_unrecognized_all)
 	// we ignore parsing it, coz it's only used by protoc.
 	// but we will keep it for optimization cases like `[(gogoproto.nullable) = false];`
-	o := &Option{Name: c.OptionName().GetText(), Value: v}
+	options := Options{{Name: name, Value: v}}
+	if name == "features" {
+		if block := c.Constant().BlockLit(); block != nil {
+			idents := block.AllIdent()
+			values := block.AllConstant()
+			for i, ident := range idents {
+				v, err := unmarshalConst(values[i].GetText())
+				if err != nil {
+					x.Fatalf("%s - feature option syntax err: %s", getTokenPos(values[i]), err)
+				}
+				options = append(options, &Option{Name: "features." + ident.GetText(), Value: v})
+			}
+		}
+	}
 
-	if !verifyOption(o.Name, o.Value) {
-		x.Fatalf("%s - option %q unsupported value %q", getTokenPos(c), o.Name, o.Value)
+	for _, o := range options {
+		if !verifyOption(o.Name, o.Value) {
+			x.Fatalf("%s - option %q unsupported value %q", getTokenPos(c), o.Name, o.Value)
+		}
 	}
 
 	switch getRuleIndex(c.GetParent()) {
 	case parser.ProtobufParserRULE_proto:
 		p := x.currentProto()
-		p.Options = append(p.Options, o)
+		p.Options = append(p.Options, options...)
 
 	case parser.ProtobufParserRULE_messageElement:
 		m := x.currentMsg()
-		m.Options = append(m.Options, o)
+		m.Options = append(m.Options, options...)
 
 	case parser.ProtobufParserRULE_oneof:
 		of := x.currentOneof()
-		of.Options = append(of.Options, o)
+		of.Options = append(of.Options, options...)
 
 	case parser.ProtobufParserRULE_enumElement:
-		x.enum.Options = append(x.enum.Options, o)
+		x.enum.Options = append(x.enum.Options, options...)
 
 	case parser.ProtobufParserRULE_serviceElement:
 		s := x.currentService()
-		s.Options = append(s.Options, o)
+		s.Options = append(s.Options, options...)
 
 	case parser.ProtobufParserRULE_rpc:
 		s := x.currentService()
 		rpc := last(s.Methods)
-		rpc.Options = append(rpc.Options, o)
+		rpc.Options = append(rpc.Options, options...)
 
 	default:
 		return
@@ -111,6 +127,9 @@ func verifyOption(name, v string) bool {
 
 	case f_field_presence:
 		return v == "EXPLICIT" || v == "IMPLICIT"
+
+	case f_enum_type:
+		return v == "OPEN" || v == "CLOSED"
 
 	case option_packed, option_allow_alias:
 		return verifyTrueOrFalse(v)

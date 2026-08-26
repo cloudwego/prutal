@@ -91,6 +91,26 @@ func (e *Enum) allowAlias() bool {
 	return ok && istrue(v)
 }
 
+func (e *Enum) isOpen() bool {
+	switch {
+	case e.Proto.IsProto2():
+		return false
+	case e.Proto.IsProto3():
+		return true
+	case e.Proto.IsEdition2023():
+		v := "OPEN"
+		if s, ok := e.Proto.Options.Get(f_enum_type); ok {
+			v = s
+		}
+		if s, ok := e.Options.Get(f_enum_type); ok {
+			v = s
+		}
+		return v == "OPEN"
+	default:
+		return false
+	}
+}
+
 func (e *Enum) genMapping() bool {
 	if e.Directives.Has(prutalNoEnumMapping) {
 		return false
@@ -118,14 +138,42 @@ func (e *Enum) resolve() {
 
 func (e *Enum) verify() error {
 	errs := []error{}
-	m := map[int32]bool{}
+	if len(e.Fields) == 0 {
+		errs = append(errs, errors.New("must contain at least one value declaration"))
+	}
+	allowAlias := e.allowAlias()
+	foundAlias := false
+	numbers := map[int32]*EnumField{}
 	for _, f := range e.Fields {
 		if e.IsReservedField(f.Value) {
 			errs = append(errs, fmt.Errorf("%q = %d is reserved", f.Name, f.Value))
-		} else if m[f.Value] && !e.allowAlias() {
-			errs = append(errs, fmt.Errorf("%q = %d is duplicated", f.Name, f.Value))
 		}
-		m[f.Value] = true
+		if previous := numbers[f.Value]; previous != nil {
+			foundAlias = true
+			if !allowAlias {
+				errs = append(errs, fmt.Errorf("%q = %d is duplicated with %q", f.Name, f.Value, previous.Name))
+			}
+		}
+		numbers[f.Value] = f
+	}
+	if allowAlias && !foundAlias {
+		errs = append(errs, errors.New("allows aliases, but none were found"))
+	}
+
+	if e.isOpen() && len(e.Fields) > 0 {
+		if e.Fields[0].Value != 0 {
+			errs = append(errs, errors.New("using open semantics must have zero number for the first value"))
+		}
+		names := make(map[string]*EnumField, len(e.Fields))
+		prefix := strings.ReplaceAll(strings.ToLower(e.Name), "_", "")
+		for _, f := range e.Fields {
+			name := strs.EnumValueName(strs.TrimEnumPrefix(f.Name, prefix))
+			if previous := names[name]; previous != nil && previous.Value != f.Value {
+				errs = append(errs, fmt.Errorf(
+					"using open semantics has name conflict: %q with %q", f.Name, previous.Name))
+			}
+			names[name] = f
+		}
 	}
 	return errors.Join(errs...)
 }
@@ -185,14 +233,15 @@ func (x *protoLoader) ExitEnumField(c *parser.EnumFieldContext) {
 	f.Directives.Parse(f.HeadComment, f.InlineComment)
 
 	//  (MINUS)? intLit
-	if num, ok := text.UnmarshalI32(c.IntLit().GetText()); !ok {
+	literal := c.IntLit().GetText()
+	if c.MINUS() != nil {
+		literal = "-" + literal
+	}
+	if num, ok := text.UnmarshalI32(literal); !ok {
 		t := c.IntLit()
-		x.Fatalf("%s - parse enum %q err", getTokenPos(t), t.GetText())
+		x.Fatalf("%s - parse enum %q err", getTokenPos(t), literal)
 	} else {
 		f.Value = num
-	}
-	if t := c.MINUS(); t != nil {
-		f.Value = -f.Value
 	}
 
 	// enumValueOptions

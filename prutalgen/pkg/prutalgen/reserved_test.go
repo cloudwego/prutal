@@ -51,6 +51,7 @@ message M {
 	reserved 30,50;
 	reserved 70 to 100;
 	reserved 1000 to max;
+	ZERO = 0;
   }
 }
 `)

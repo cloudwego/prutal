@@ -100,7 +100,105 @@ func TestEnum_Verify(t *testing.T) {
 	assert.ErrorContains(t, p.verify(), "1 is duplicated")
 	e.Options = Options{{Name: option_allow_alias, Value: "true"}}
 	assert.NoError(t, p.verify())
+	e.Fields = e.Fields[:2]
+	assert.ErrorContains(t, p.verify(), "allows aliases, but none were found")
 	e.Options = nil
+
+	// open enum validation
+	p.Edition = editionProto3
+	e.Fields = []*EnumField{{Name: "E_ONE", Value: 1}}
+	assert.ErrorContains(t, p.verify(), "must have zero number for the first value")
+	e.Fields = []*EnumField{
+		{Name: "E_FOO", Value: 0},
+		{Name: "FOO", Value: 1},
+	}
+	assert.ErrorContains(t, p.verify(), "name conflict")
+	e.Fields = nil
+	assert.ErrorContains(t, p.verify(), "must contain at least one value declaration")
+}
+
+func TestEnumResolveDoesNotRenameValuesForMappingHelpers(t *testing.T) {
+	p := &Proto{Directives: Directives{prutalNoEnumMapping}}
+	e := &Enum{
+		Name:  "e",
+		Proto: p,
+		Fields: []*EnumField{
+			{Name: "name"},
+			{Name: "name_"},
+		},
+	}
+	for _, f := range e.Fields {
+		f.Enum = e
+	}
+
+	e.resolve()
+	assert.Equal(t, "E_name", e.Fields[0].GoName)
+	assert.Equal(t, "E_name_", e.Fields[1].GoName)
+}
+
+func TestEnumEditionOpenSemantics(t *testing.T) {
+	p := &Proto{Edition: edition2023}
+	e := &Enum{
+		Name:   "E",
+		Proto:  p,
+		Fields: []*EnumField{{Name: "ONE", Value: 1}},
+	}
+	p.Enums = []*Enum{e}
+
+	assert.ErrorContains(t, p.verify(), "must have zero number for the first value")
+
+	p.Options = Options{{Name: f_enum_type, Value: "CLOSED"}}
+	assert.NoError(t, p.verify())
+
+	e.Options = Options{{Name: f_enum_type, Value: "OPEN"}}
+	assert.ErrorContains(t, p.verify(), "must have zero number for the first value")
+
+	p.Options = Options{{Name: f_enum_type, Value: "OPEN"}}
+	e.Options = Options{{Name: f_enum_type, Value: "CLOSED"}}
+	e.Fields = []*EnumField{
+		{Name: "E_FOO", Value: 1},
+		{Name: "FOO", Value: 2},
+	}
+	assert.NoError(t, p.verify())
+	assert.False(t, verifyOption(f_enum_type, "UNKNOWN"))
+}
+
+func TestLoaderEnumEditionAggregateSemantics(t *testing.T) {
+	p := loadTestProto(t, `
+edition = "2023";
+option go_package = "example.com/enum";
+option features = { enum_type: CLOSED };
+enum FileClosed { FILE_ONE = 1; }
+enum EnumOpen {
+  option features = { enum_type: OPEN };
+  ENUM_ZERO = 0;
+}
+`)
+
+	assert.False(t, p.Enums[0].isOpen())
+	assert.True(t, p.Enums[1].isOpen())
+
+	p = loadTestProto(t, `
+edition = "2023";
+option go_package = "example.com/enum";
+option features = { enum_type: OPEN };
+enum EnumClosed {
+  option features = { enum_type: CLOSED };
+  ENUM_ONE = 1;
+}
+`)
+	assert.False(t, p.Enums[0].isOpen())
+}
+
+func TestLoaderEnumMinimumValue(t *testing.T) {
+	p := loadTestProto(t, `
+option go_package = "example.com/enum";
+enum Decimal { DECIMAL_MIN = -2147483648; }
+enum Hex { HEX_MIN = -0x80000000; }
+`)
+
+	assert.Equal(t, int32(-2147483648), p.Enums[0].Fields[0].Value)
+	assert.Equal(t, int32(-2147483648), p.Enums[1].Fields[0].Value)
 }
 
 func TestLoader_EnumAllowAlias(t *testing.T) {

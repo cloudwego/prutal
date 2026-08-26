@@ -45,6 +45,7 @@ const (
 
 	f_repeated_field_encoding = "features.repeated_field_encoding"
 	f_field_presence          = "features.field_presence"
+	f_enum_type               = "features.enum_type"
 )
 
 const ( // proto2 options
