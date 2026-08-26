@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"go/token"
 	"path"
+	"path/filepath"
 	"strings"
 
 	"github.com/cloudwego/prutal/prutalgen/internal/parser"
@@ -39,6 +40,7 @@ type Import struct {
 // Proto represents a proto file
 type Proto struct {
 	ProtoFile string
+	protoName string // slash-separated descriptor name used by M options
 	Edition   string
 	Package   string
 
@@ -47,8 +49,13 @@ type Proto struct {
 	// goPackageExplicit reports whether GoPackage came from the suffix after
 	// a semicolon instead of being derived from GoImport.
 	goPackageExplicit bool
+	// goPackageIdentity preserves explicit whitespace for protogen's package
+	// consistency check while GoPackage contains the valid Go identifier.
+	goPackageIdentity string
 
 	Directives Directives
+
+	goPackageFromM string
 
 	Imports []*Import
 	Options Options
@@ -74,18 +81,54 @@ func (p *Proto) String() string {
 	return b.String()
 }
 
+// DescriptorName returns the slash-separated protobuf descriptor name.
+func (p *Proto) DescriptorName() string {
+	if p.protoName != "" {
+		return p.protoName
+	}
+	return filepath.ToSlash(p.ProtoFile)
+}
+
 func (p *Proto) setGoPackage(s string) {
-	imp, pkg, _ := strings.Cut(s, ";")
-	imp = strings.TrimSpace(imp)
-	pkg = strings.TrimSpace(pkg)
-	p.GoImport = imp
-	p.goPackageExplicit = pkg != ""
-	if pkg != "" {
-		p.GoPackage = pkg
-	} else if p.GoImport != "" {
-		p.GoPackage = strs.GoSanitized(path.Base(p.GoImport))
-	} else {
-		p.GoPackage = ""
+	p.setGoPackageOptions(s, "")
+}
+
+func (p *Proto) setGoPackageOptions(fileOpt, mOpt string) {
+	fileImport, filePackage, _ := strings.Cut(fileOpt, ";")
+	mImport, mPackage, _ := strings.Cut(mOpt, ";")
+	filePackageSet := filePackage != ""
+	mPackageSet := mPackage != ""
+	filePackageIdentity := filePackage
+	mPackageIdentity := mPackage
+	fileImport = strings.TrimSpace(fileImport)
+	filePackage = strings.TrimSpace(filePackage)
+	mPackage = strings.TrimSpace(mPackage)
+
+	p.GoImport = fileImport
+	if mImport != "" {
+		p.GoImport = mImport
+	}
+
+	p.goPackageExplicit = true
+	switch {
+	case mPackageSet:
+		p.GoPackage = mPackage
+		p.goPackageIdentity = mPackageIdentity
+	case filePackageSet:
+		p.GoPackage = filePackage
+		p.goPackageIdentity = filePackageIdentity
+	default:
+		p.goPackageExplicit = false
+		packageImport := fileImport
+		if packageImport == "" {
+			packageImport = p.GoImport
+		}
+		if packageImport == "" {
+			p.GoPackage = ""
+		} else {
+			p.GoPackage = strs.GoSanitized(path.Base(packageImport))
+		}
+		p.goPackageIdentity = p.GoPackage
 	}
 }
 
@@ -108,9 +151,19 @@ func (p *Proto) validateGoPackage() error {
 func validateGoPackageConsistency(protos []*Proto) error {
 	packageFiles := make(map[string]*Proto, len(protos))
 	for _, p := range protos {
-		if previous := packageFiles[p.GoImport]; previous != nil && previous.GoPackage != p.GoPackage {
-			return fmt.Errorf("Go package %q has inconsistent names %q (%s) and %q (%s)",
-				p.GoImport, previous.GoPackage, previous.ProtoFile, p.GoPackage, p.ProtoFile)
+		identity := p.goPackageIdentity
+		if identity == "" {
+			identity = p.GoPackage
+		}
+		if previous := packageFiles[p.GoImport]; previous != nil {
+			previousIdentity := previous.goPackageIdentity
+			if previousIdentity == "" {
+				previousIdentity = previous.GoPackage
+			}
+			if previousIdentity != identity {
+				return fmt.Errorf("Go package %q has inconsistent names %q (%s) and %q (%s)",
+					p.GoImport, previousIdentity, previous.ProtoFile, identity, p.ProtoFile)
+			}
 		}
 		packageFiles[p.GoImport] = p
 	}
@@ -432,7 +485,7 @@ func (x *protoLoader) ExitImportStatement(c *parser.ImportStatementContext) {
 	if err != nil {
 		x.Fatalf("%s - import syntax err: %s", getTokenPos(c), err)
 	}
-	imp.Proto = x.loadProto(importpath)
+	imp.Proto = x.loadProto(importpath, false)
 	for _, previous := range p.Imports {
 		if previous.Proto == imp.Proto {
 			x.Fatalf("%s - import %q was listed twice", getTokenPos(c), importpath)

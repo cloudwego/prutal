@@ -44,10 +44,28 @@ func expectProtoError(t *testing.T, payload, want string) {
 	var recovered any
 	func() {
 		defer func() { recovered = recover() }()
-		x := NewLoader([]string{"."}, nil)
-		x.SetLogger(panicLogger{})
 		fn := writeFile(t, "test.proto", []byte(payload))
+		x := NewLoader([]string{filepath.Dir(fn)}, nil)
+		x.SetLogger(panicLogger{})
 		_ = x.LoadProto(fn)
+	}()
+	if recovered == nil {
+		t.Fatal("expected loader error")
+	}
+	err, ok := recovered.(testFatal)
+	if !ok {
+		panic(recovered)
+	}
+	assert.StringContains(t, string(err), want)
+}
+
+func expectLoaderError(t *testing.T, x Loader, files []string, want string) {
+	t.Helper()
+	var recovered any
+	func() {
+		defer func() { recovered = recover() }()
+		x.SetLogger(panicLogger{})
+		x.LoadProtos(files)
 	}()
 	if recovered == nil {
 		t.Fatal("expected loader error")
@@ -109,9 +127,9 @@ func (l *expectLogger) Fatalf(format string, v ...any) {
 }
 
 func loadTestProto(t *testing.T, payload string) *Proto {
-	x := NewLoader([]string{"."}, nil)
-	x.SetLogger(&testLogger{t})
 	fn := writeFile(t, "test.proto", []byte(payload))
+	x := NewLoader([]string{filepath.Dir(fn)}, nil)
+	x.SetLogger(&testLogger{t})
 	ff := x.LoadProto(fn)
 	assert.Equal(t, 1, len(ff))
 	assert.Equal(t, fn, ff[0].ProtoFile)
@@ -119,9 +137,9 @@ func loadTestProto(t *testing.T, payload string) *Proto {
 }
 
 func expectFail(t *testing.T, payload string, l LoggerIface) {
-	x := NewLoader([]string{"."}, nil)
-	x.SetLogger(l)
 	fn := writeFile(t, "test.proto", []byte(payload))
+	x := NewLoader([]string{filepath.Dir(fn)}, nil)
+	x.SetLogger(l)
 	_ = x.LoadProto(fn)
 	t.Helper()
 	t.Fatal("didn't call Fatal")
@@ -133,6 +151,188 @@ func TestLoader(t *testing.T) {
 
 	f = loadTestProto(t, `option go_package = "hello/prutal_test; prutal";`)
 	assert.Equal(t, "prutal", f.GoPackage) // go_package with package name
+}
+
+func TestLoader_MOptionPrecedence(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		fileOpt     string
+		mOpt        string
+		wantImport  string
+		wantPackage string
+	}{
+		{
+			name:        "M import and go_package derived package",
+			fileOpt:     "golang.org/x/foo",
+			mOpt:        "golang.org/x/bar",
+			wantImport:  "golang.org/x/bar",
+			wantPackage: "foo",
+		},
+		{
+			name:        "M import and package",
+			fileOpt:     "golang.org/x/foo;filepkg",
+			mOpt:        "golang.org/x/bar;mpkg",
+			wantImport:  "golang.org/x/bar",
+			wantPackage: "mpkg",
+		},
+		{
+			name:        "M package only",
+			fileOpt:     "golang.org/x/foo;filepkg",
+			mOpt:        ";mpkg",
+			wantImport:  "golang.org/x/foo",
+			wantPackage: "mpkg",
+		},
+		{
+			name:        "go_package package with M import",
+			fileOpt:     ";filepkg",
+			mOpt:        "golang.org/x/bar",
+			wantImport:  "golang.org/x/bar",
+			wantPackage: "filepkg",
+		},
+		{
+			name:        "M only",
+			mOpt:        "golang.org/x/bar",
+			wantImport:  "golang.org/x/bar",
+			wantPackage: "bar",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			payload := ""
+			if tc.fileOpt != "" {
+				payload = fmt.Sprintf("option go_package = %q;", tc.fileOpt)
+			}
+			_ = writeFileUnderDir(t, dir, "test.proto", []byte(payload))
+			x := NewLoader([]string{dir}, map[string]string{"test.proto": tc.mOpt})
+			x.SetLogger(&testLogger{t})
+			p := x.LoadProto("test.proto")[0]
+			assert.Equal(t, "test.proto", p.protoName)
+			assert.Equal(t, tc.wantImport, p.GoImport)
+			assert.Equal(t, tc.wantPackage, p.GoPackage)
+		})
+	}
+}
+
+func TestLoader_MOptionUsesLogicalProtoName(t *testing.T) {
+	dir := t.TempDir()
+	protoPath := filepath.Join(dir, "cases", "oneof")
+	assert.NoError(t, os.MkdirAll(protoPath, 0755))
+	filename := writeFileUnderDir(t, protoPath, "oneof.proto", []byte(
+		`option go_package = "example.com/original/foo";`,
+	))
+
+	for _, tc := range []struct {
+		name       string
+		mapping    map[string]string
+		wantImport string
+	}{
+		{
+			name:       "descriptor name matches",
+			mapping:    map[string]string{"oneof.proto": "example.com/mapped/bar"},
+			wantImport: "example.com/mapped/bar",
+		},
+		{
+			name:       "M key is not cleaned",
+			mapping:    map[string]string{"./oneof.proto": "example.com/mapped/bar"},
+			wantImport: "example.com/original/foo",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			x := NewLoader([]string{protoPath}, tc.mapping)
+			x.SetLogger(&testLogger{t})
+			p := x.LoadProto(filename)[0]
+			assert.Equal(t, "oneof.proto", p.protoName)
+			assert.Equal(t, tc.wantImport, p.GoImport)
+			assert.Equal(t, "foo", p.GoPackage)
+		})
+	}
+
+	t.Run("first matching proto path", func(t *testing.T) {
+		x := NewLoader([]string{dir, protoPath}, map[string]string{
+			"cases/oneof/oneof.proto": "example.com/mapped/bar",
+		})
+		x.SetLogger(&testLogger{t})
+		p := x.LoadProto(filename)[0]
+		assert.Equal(t, "cases/oneof/oneof.proto", p.protoName)
+		assert.Equal(t, "example.com/mapped/bar", p.GoImport)
+	})
+
+	t.Run("virtual input keeps requested name", func(t *testing.T) {
+		x := NewLoader([]string{dir, protoPath}, map[string]string{
+			"oneof.proto": "example.com/mapped/bar",
+		})
+		x.SetLogger(&testLogger{t})
+		p := x.LoadProto("oneof.proto")[0]
+		assert.Equal(t, "oneof.proto", p.protoName)
+		assert.Equal(t, "example.com/mapped/bar", p.GoImport)
+	})
+}
+
+func TestLoaderRejectsInvalidPhysicalRoots(t *testing.T) {
+	include := t.TempDir()
+	outside := writeFileUnderDir(t, t.TempDir(), "outside.proto", []byte(
+		`option go_package = "example.com/outside";`,
+	))
+	expectLoaderError(t, NewLoader([]string{include}, nil), []string{outside},
+		"does not reside within any include path")
+
+	first := filepath.Join(t.TempDir(), "first")
+	second := filepath.Join(filepath.Dir(first), "second")
+	assert.NoError(t, os.MkdirAll(first, 0755))
+	assert.NoError(t, os.MkdirAll(second, 0755))
+	_ = writeFileUnderDir(t, first, "shadow.proto", []byte(
+		`option go_package = "example.com/first"; message First {}`,
+	))
+	shadowed := writeFileUnderDir(t, second, "shadow.proto", []byte(
+		`option go_package = "example.com/second"; message Second {}`,
+	))
+	expectLoaderError(t, NewLoader([]string{first, second}, nil), []string{shadowed},
+		"is shadowed by")
+}
+
+func TestCanonicalProtoName(t *testing.T) {
+	for _, name := range []string{"test.proto", "dir/test.proto"} {
+		assert.True(t, isCanonicalProtoName(name), name)
+	}
+	for _, name := range []string{"", ".", "..", "./test.proto", "../test.proto", "dir/../test.proto", "/test.proto", `dir\test.proto`} {
+		assert.False(t, isCanonicalProtoName(name), name)
+	}
+}
+
+func TestRelativeToInclude(t *testing.T) {
+	for _, tc := range []struct {
+		include   string
+		requested string
+		want      string
+	}{
+		{"tests/cases", "./tests/cases/grpc/echo.proto", "grpc/echo.proto"},
+		{"tests//cases", "tests/cases/./grpc/echo.proto", "grpc/echo.proto"},
+		{"./tests/cases/.", "tests//cases/grpc/echo.proto", "grpc/echo.proto"},
+		{"../other", "../other/foo.proto", "foo.proto"},
+	} {
+		got, ok := relativeToInclude(tc.include, tc.requested)
+		assert.True(t, ok, tc)
+		assert.Equal(t, tc.want, got, tc)
+		assert.True(t, isCanonicalProtoName(got), tc)
+	}
+
+	got, ok := relativeToInclude("tests/cases", "tests/cases/sub/../echo.proto")
+	assert.True(t, ok)
+	assert.False(t, isCanonicalProtoName(got))
+}
+
+func TestLoaderUsesLogicalProtoIdentity(t *testing.T) {
+	dir := t.TempDir()
+	nested := filepath.Join(dir, "nested")
+	assert.NoError(t, os.MkdirAll(nested, 0755))
+	_ = writeFileUnderDir(t, nested, "same.proto", []byte(
+		`package duplicate; option go_package = "example.com/duplicate"; message M {}`,
+	))
+	roots := NewLoader([]string{nested}, nil).LoadProtos([]string{"same.proto", "same.proto"})
+	assert.Equal(t, 1, len(roots))
+
+	x := NewLoader([]string{dir, nested}, nil)
+	expectLoaderError(t, x, []string{"nested/same.proto", "same.proto"}, `"duplicate.M"`)
 }
 
 func TestGoPackageValidation(t *testing.T) {
@@ -161,6 +361,22 @@ func TestGoPackageValidation(t *testing.T) {
 	p.setGoPackage("example.com/x;_go")
 	assert.NoError(t, p.validateGoPackage())
 	assert.Equal(t, "_go", p.GoPackage)
+
+	p.setGoPackageOptions("example.com/original/foo", "invalid")
+	assert.ErrorContains(t, p.validateGoPackage(), "invalid Go import path")
+
+	for _, mOpt := range []string{" ", " ;pkg", "; "} {
+		p.setGoPackageOptions("example.com/original/foo", mOpt)
+		if err := p.validateGoPackage(); err == nil {
+			t.Fatalf("setGoPackageOptions(_, %q) succeeded, want error", mOpt)
+		}
+	}
+
+	for _, mOpt := range []string{"; pkg", ";pkg ", "example.com/mapped/foo; pkg "} {
+		p.setGoPackageOptions("example.com/original/foo", mOpt)
+		assert.NoError(t, p.validateGoPackage())
+		assert.Equal(t, "pkg", p.GoPackage)
+	}
 }
 
 func TestGoPackageConsistency(t *testing.T) {
@@ -175,6 +391,12 @@ func TestGoPackageConsistency(t *testing.T) {
 		{ProtoFile: "b.proto", GoImport: "example.com/shared", GoPackage: "shared"},
 	})
 	assert.NoError(t, err)
+
+	err = validateGoPackageConsistency([]*Proto{
+		{ProtoFile: "a.proto", GoImport: "example.com/shared", GoPackage: "shared", goPackageIdentity: "shared"},
+		{ProtoFile: "b.proto", GoImport: "example.com/shared", GoPackage: "shared", goPackageIdentity: " shared"},
+	})
+	assert.ErrorContains(t, err, "inconsistent names")
 }
 
 func TestLoader_SyntaxError(t *testing.T) {

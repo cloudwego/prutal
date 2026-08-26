@@ -18,8 +18,8 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/cloudwego/prutal/prutalgen/pkg/prutalgen"
@@ -49,22 +49,36 @@ func main() {
 		out = "."
 	}
 
-	x := prutalgen.NewLoader([]string(protoPath), opts.Proto2pkg())
+	genPathType, proto2pkg, module, err := opts.Parse()
+	if err != nil {
+		fatal(err)
+	}
+
+	x := prutalgen.NewLoader([]string(protoPath), proto2pkg)
 	g := prutalgen.NewGoCodeGen()
 	g.Getter = GenGetter
+	g.Module = module
 	args := flags.Args()
 	if len(args) == 0 {
 		println("WARN: no proto file provided")
 	}
-	files := make([]string, len(args))
-	for i, a := range args {
-		files[i] = filepath.Clean(a)
+	protos := x.LoadProtos(args)
+	if err := opts.ValidateFiles(protos); err != nil {
+		fatal(err)
 	}
-	for _, p := range x.LoadProtos(files) {
-		if err := g.Gen(p, opts.GenPathType(), out); err != nil {
+	if err := g.ValidateOutputPaths(protos, genPathType, out); err != nil {
+		fatal(err)
+	}
+	for _, p := range protos {
+		if err := g.Gen(p, genPathType, out); err != nil {
 			p.Fatalf("generate code err: %s", err)
 		}
 	}
+}
+
+func fatal(err error) {
+	fmt.Fprintln(os.Stderr, "[FATAL]", err)
+	os.Exit(1)
 }
 
 type sliceArg []string

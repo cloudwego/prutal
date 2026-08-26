@@ -128,6 +128,77 @@ func TestGenCode(t *testing.T) {
 	assertLine("prutal.Unmarshal")
 }
 
+func TestSourcePathUsesLogicalProtoName(t *testing.T) {
+	g := NewGoCodeGen()
+	p := &Proto{
+		ProtoFile: filepath.Join(t.TempDir(), "physical", "test.proto"),
+		protoName: "logical/nested/test.proto",
+		GoImport:  "example.com/project/testpb",
+	}
+	out := filepath.Join(t.TempDir(), "out")
+	assert.Equal(t,
+		filepath.Join(out, "logical", "nested", "test.pb.go"),
+		g.SourcePath(p, GenBySourceRelative, out, ".pb.go"),
+	)
+	assert.Equal(t,
+		filepath.Join(out, "example.com", "project", "testpb", "test.pb.go"),
+		g.SourcePath(p, GenByImport, out, ".pb.go"),
+	)
+
+	g.Module = "example.com/project"
+	assert.Equal(t,
+		filepath.Join(out, "testpb", "test.pb.go"),
+		g.SourcePath(p, GenByImport, out, ".pb.go"),
+	)
+
+	g.Module = "example.net/other"
+	_, err := g.sourcePath(p, GenByImport, out, ".pb.go")
+	assert.ErrorContains(t, err, `generated file does not match prefix "example.net/other"`)
+	_, err = g.sourcePath(p, GenBySourceRelative, out, ".pb.go")
+	assert.ErrorContains(t, err, "cannot use module= with paths=source_relative")
+
+	g.Module = ""
+	p.protoName = "logical/nested/test.protodevel"
+	assert.Equal(t,
+		filepath.Join(out, "logical", "nested", "test.pb.go"),
+		g.SourcePath(p, GenBySourceRelative, out, ".pb.go"),
+	)
+	assert.Equal(t,
+		filepath.Join(out, "example.com", "project", "testpb", "test.pb.go"),
+		g.SourcePath(p, GenByImport, out, ".pb.go"),
+	)
+}
+
+func TestValidateOutputPaths(t *testing.T) {
+	out := t.TempDir()
+	g := NewGoCodeGen()
+	same := &Proto{protoName: "same.proto", GoImport: "example.com/project/same"}
+	assert.NoError(t, g.ValidateOutputPaths([]*Proto{same, same}, GenByImport, out))
+
+	protos := []*Proto{
+		{protoName: "a/foo.proto", GoImport: "example.com/project/pkg"},
+		{protoName: "b/foo.proto", GoImport: "example.com/project/pkg"},
+	}
+	assert.ErrorContains(t,
+		g.ValidateOutputPaths(protos, GenByImport, out),
+		"tried to write the same file twice",
+	)
+
+	g.Module = "example.com/project"
+	protos[1].GoImport = "example.net/outside"
+	assert.ErrorContains(t,
+		g.ValidateOutputPaths(protos, GenByImport, out),
+		`generated file does not match prefix "example.com/project"`,
+	)
+
+	g.Module = ""
+	protos = []*Proto{{protoName: "../outside.proto", GoImport: "example.com/project/pkg"}}
+	assert.ErrorContains(t,
+		g.ValidateOutputPaths(protos, GenBySourceRelative, out),
+		`invalid generated file path "../outside.pb.go"`,
+	)
+}
+
 func TestProtoGenFlattenedDeclarationOrder(t *testing.T) {
 	p := &Proto{GoPackage: "test", Directives: Directives{prutalNoEnumMapping}}
 	outer := &Message{GoName: "Outer", Proto: p}

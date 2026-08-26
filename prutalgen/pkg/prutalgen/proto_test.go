@@ -17,21 +17,21 @@
 package prutalgen
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/cloudwego/prutal/internal/testutils/assert"
 )
 
 func TestLoader_Proto(t *testing.T) {
-	x := NewLoader([]string{"."}, nil)
+	dir := t.TempDir()
+	x := NewLoader([]string{dir}, nil)
 	x.SetLogger(&testLogger{t})
-	empty := writeFile(t, "empty.proto", []byte(`option go_package = "example.com/empty";`))
-	fn := writeFile(t, "test.proto", []byte(fmt.Sprintf(`
+	empty := writeFileUnderDir(t, dir, "empty.proto", []byte(`option go_package = "example.com/empty";`))
+	fn := writeFileUnderDir(t, dir, "test.proto", []byte(`
 syntax = "proto3";
 package prutal_test;
-import public "%s";
-option go_package = "hello/prutal_test;prutal";`, empty)))
+import public "empty.proto";
+option go_package = "hello/prutal_test;prutal";`))
 	ff := x.LoadProto(fn)
 	assert.Equal(t, 2, len(ff))
 	f := ff[0]
@@ -72,7 +72,7 @@ func TestLoaderRejectsDuplicateImport(t *testing.T) {
 		`option go_package = "mod/a"; message A {}`,
 	))
 	_ = writeFileUnderDir(t, dir, "b.proto", []byte(
-		`option go_package = "mod/b"; import "a.proto"; import public "./a.proto";`,
+		`option go_package = "mod/b"; import "a.proto"; import public "a.proto";`,
 	))
 
 	x := NewLoader([]string{dir}, nil)

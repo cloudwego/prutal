@@ -55,8 +55,10 @@ type Loader interface {
 }
 
 func NewLoader(includes []string, proto2gopkg map[string]string) Loader {
-	// add empty element to check filepath without include in searchProtoFile
-	includes = append(includes, "")
+	includes = append([]string(nil), includes...)
+	if len(includes) == 0 {
+		includes = append(includes, ".")
+	}
 	return &protoLoader{
 		includes:    includes,
 		proto2gopkg: proto2gopkg,
@@ -76,22 +78,127 @@ func (x *protoLoader) SetLogger(l LoggerIface) {
 func fullFilename(incl string, file string) string {
 	// file path in proto would be in the form of unix style
 	// need `filepath.FromSlash` for converting it on windows
-	return filepath.FromSlash(path.Join(incl, file))
+	if filepath.IsAbs(file) {
+		return filepath.Clean(file)
+	}
+	return filepath.Join(incl, filepath.FromSlash(file))
 }
 
-func (x *protoLoader) searchProtoFile(file string) string {
+func (x *protoLoader) searchProtoFile(file string, root bool) (string, string) {
+	if isCanonicalProtoName(file) {
+		if fn := x.searchVirtualProto(file); fn != "" {
+			return fn, file
+		}
+	}
+
+	if root {
+		if info, err := os.Stat(file); err == nil && !info.IsDir() {
+			fn, err := filepath.Abs(file)
+			if err == nil {
+				protoName, ok := x.protoNameForPhysical(file, fn)
+				if !ok {
+					x.Fatalf("proto file %q does not reside within any include path %v", file, x.includes)
+				}
+				resolved := x.searchVirtualProto(protoName)
+				if !sameFile(fn, resolved) {
+					x.Fatalf("proto file %q is shadowed by %q in the include path", file, resolved)
+				}
+				return resolved, protoName
+			}
+		}
+	}
+
+	x.Fatalf("proto file %q not found in includes %v", file, x.includes)
+	return "", "" // never goes here
+}
+
+func (x *protoLoader) searchVirtualProto(name string) string {
+	if !isCanonicalProtoName(name) {
+		return ""
+	}
 	for _, incl := range x.includes {
-		fn := fullFilename(incl, file)
+		fn := fullFilename(incl, name)
 		fn, err := filepath.Abs(fn)
 		if err != nil {
 			continue
 		}
-		if _, err := os.Stat(fn); err == nil {
+		if info, err := os.Stat(fn); err == nil && !info.IsDir() {
 			return fn
 		}
 	}
-	x.Fatalf("proto file %q not found in includes %v", file, x.includes)
-	return "" // never goes here
+	return ""
+}
+
+func (x *protoLoader) protoNameForPhysical(requested, protofile string) (string, bool) {
+	for _, incl := range x.includes {
+		rel, ok := relativeToInclude(incl, requested)
+		if !ok || !isCanonicalProtoName(rel) {
+			continue
+		}
+		candidate, err := filepath.Abs(fullFilename(incl, rel))
+		if err != nil || !sameFile(protofile, candidate) {
+			continue
+		}
+		return filepath.ToSlash(rel), true
+	}
+	return "", false
+}
+
+func relativeToInclude(incl, requested string) (string, bool) {
+	if incl == "" {
+		incl = "."
+	}
+	incl = normalizePhysicalPath(incl)
+	requested = normalizePhysicalPath(requested)
+	if incl == "" {
+		if requested == "" || path.IsAbs(requested) || filepath.VolumeName(requested) != "" {
+			return "", false
+		}
+		return requested, true
+	}
+	prefix := strings.TrimSuffix(incl, "/") + "/"
+	if !strings.HasPrefix(requested, prefix) {
+		return "", false
+	}
+	return strings.TrimPrefix(requested, prefix), true
+}
+
+func normalizePhysicalPath(name string) string {
+	volume := filepath.ToSlash(filepath.VolumeName(name))
+	rest := name[len(filepath.VolumeName(name)):]
+	absolute := len(rest) > 0 && os.IsPathSeparator(rest[0])
+	parts := strings.FieldsFunc(rest, func(r rune) bool {
+		return r < 128 && os.IsPathSeparator(uint8(r))
+	})
+	kept := parts[:0]
+	for _, part := range parts {
+		if part != "." {
+			kept = append(kept, part)
+		}
+	}
+	normalized := strings.Join(kept, "/")
+	if absolute {
+		normalized = "/" + normalized
+	}
+	return volume + normalized
+}
+
+func isCanonicalProtoName(name string) bool {
+	return name != "" && !path.IsAbs(name) && !filepath.IsAbs(name) &&
+		!strings.ContainsRune(name, '\\') && path.Clean(name) == name && name != "." &&
+		name != ".." && !strings.HasPrefix(name, "../")
+}
+
+func sameFile(a, b string) bool {
+	if a == "" || b == "" {
+		return false
+	}
+	aInfo, err := os.Stat(a)
+	if err != nil {
+		return false
+	}
+	bInfo, err := os.Stat(b)
+	return err == nil && os.SameFile(aInfo, bInfo)
 }
 
 func (x *protoLoader) LoadProto(file string) []*Proto {
@@ -106,8 +213,13 @@ func (x *protoLoader) LoadProtos(files []string) []*Proto {
 func (x *protoLoader) loadRoots(files []string) []*Proto {
 	x.reset()
 	roots := make([]*Proto, 0, len(files))
+	seenRoots := make(map[*Proto]bool, len(files))
 	for _, file := range files {
-		roots = append(roots, x.loadProto(file))
+		p := x.loadProto(file, true)
+		if !seenRoots[p] {
+			roots = append(roots, p)
+			seenRoots[p] = true
+		}
 	}
 	if err := validateGoPackageConsistency(x.protos); err != nil {
 		x.Fatalf("%s", err)
@@ -180,30 +292,30 @@ func (x *protoLoader) currentService() *Service {
 	return last(p.Services)
 }
 
-func (x *protoLoader) getByFile(fn string, stack bool) *Proto {
+func (x *protoLoader) getByName(name string, stack bool) *Proto {
 	if !stack {
 		for _, p := range x.protos {
-			if p.ProtoFile == fn {
+			if p.protoName == name {
 				return p
 			}
 		}
 		return nil
 	}
 	for _, p := range x.protostack {
-		if p.ProtoFile == fn {
+		if p.protoName == name {
 			return p
 		}
 	}
 	return nil
 }
 
-func (x *protoLoader) loadProto(file string) *Proto {
+func (x *protoLoader) loadProto(file string, root bool) *Proto {
 	if embeddedProtos[file] != nil {
 		return x.loadEmbeddedProto(file)
 	}
-	protofile := x.searchProtoFile(file)
+	protofile, protoName := x.searchProtoFile(file, root)
 
-	if proto := x.getByFile(protofile, true); proto != nil {
+	if proto := x.getByName(protoName, true); proto != nil {
 		files := make([]string, 0, len(x.protostack))
 		for _, p := range x.protostack {
 			files = append(files, p.ProtoFile)
@@ -212,16 +324,17 @@ func (x *protoLoader) loadProto(file string) *Proto {
 		return proto
 	}
 
-	if proto := x.getByFile(protofile, false); proto != nil {
+	if proto := x.getByName(protoName, false); proto != nil {
 		return proto // parsed
 	}
 
 	p := &Proto{
-		ProtoFile: protofile,
-		Edition:   editionProto2,
-		l:         x.l,
+		ProtoFile:      protofile,
+		protoName:      protoName,
+		Edition:        editionProto2,
+		goPackageFromM: x.proto2gopkg[protoName],
+		l:              x.l,
 	}
-	p.setGoPackage(x.proto2gopkg[file])
 	push(&x.protostack, p)
 	defer pop(&x.protostack)
 	x.protos = append(x.protos, p)
@@ -236,14 +349,16 @@ func (x *protoLoader) loadProto(file string) *Proto {
 }
 
 func (x *protoLoader) loadEmbeddedProto(file string) *Proto {
-	if proto := x.getByFile(file, false); proto != nil {
+	if proto := x.getByName(file, false); proto != nil {
 		return proto // parsed
 	}
 
 	data := embeddedProtos[file]
 	p := &Proto{
-		ProtoFile: file,
-		Edition:   editionProto2,
+		ProtoFile:      file,
+		protoName:      file,
+		Edition:        editionProto2,
+		goPackageFromM: x.proto2gopkg[file],
 
 		l: x.l,
 	}
@@ -276,10 +391,8 @@ func (x *protoLoader) parseInput(in antlr.CharStream) {
 	comment := x.consumeHeadComment(proto)
 	p.Directives.Parse(comment)
 
-	gopkg, ok := p.Options.Get("go_package")
-	if ok {
-		p.setGoPackage(gopkg)
-	}
+	gopkg, _ := p.Options.Get("go_package")
+	p.setGoPackageOptions(gopkg, p.goPackageFromM)
 	if err := p.validateGoPackage(); err != nil {
 		x.Fatalf("%s", err)
 	}
