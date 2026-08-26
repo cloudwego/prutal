@@ -15,3 +15,22 @@
  */
 
 package wire
+
+import (
+	"testing"
+	"unsafe"
+
+	"github.com/cloudwego/prutal/internal/testutils/assert"
+)
+
+// Map entry: key (field 1) = 1 (canonical), value (field 2) = the over-long
+// varint 0x80 0x00 (= 0, i.e. false). The pre-fix code read only the first
+// byte (0x80 != 0) and wrongly returned true. Bool map keys/values are
+// varints on the wire, not single bytes.
+func TestDecodeMap_Bool_Bool(t *testing.T) {
+	b := []byte{0x08, 0x01, 0x10, 0x80, 0x00}
+
+	m := map[bool]bool{}
+	assert.NoError(t, DecodeMap_Bool_Bool(b, unsafe.Pointer(&m)))
+	assert.MapEqual(t, map[bool]bool{true: false}, m)
+}

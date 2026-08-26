@@ -34,6 +34,19 @@ func init() {
 	packedDecoderFuncs[CoderBool] = DecodePackedBool
 }
 
+// setPacked stores a decoded packed run into the field slice: it appends to
+// elements already decoded from earlier occurrences of the same field
+// (protobuf merge semantics), or takes over vv directly when the field is
+// still empty, avoiding an extra allocation and copy in the common case.
+func setPacked[T any](h unsafe.Pointer, vv []T) {
+	dst := (*[]T)(h)
+	if len(*dst) == 0 {
+		*dst = vv
+		return
+	}
+	*dst = append(*dst, vv...)
+}
+
 func DecodePackedVarintU64(b []byte, h unsafe.Pointer) error {
 	sz := 0
 	for _, v := range b {
@@ -60,7 +73,7 @@ func DecodePackedVarintU64(b []byte, h unsafe.Pointer) error {
 		vv = append(vv, v)
 		b = b[n:]
 	}
-	*(*[]uint64)(h) = vv
+	setPacked(h, vv)
 	return nil
 }
 
@@ -90,7 +103,7 @@ func DecodePackedVarintU32(b []byte, h unsafe.Pointer) error {
 		vv = append(vv, uint32(v))
 		b = b[n:]
 	}
-	*(*[]uint32)(h) = vv
+	setPacked(h, vv)
 	return nil
 }
 
@@ -120,7 +133,7 @@ func DecodePackedZigZag64(b []byte, h unsafe.Pointer) error {
 		vv = append(vv, protowire.DecodeZigZag(v))
 		b = b[n:]
 	}
-	*(*[]int64)(h) = vv
+	setPacked(h, vv)
 	return nil
 }
 
@@ -150,7 +163,7 @@ func DecodePackedZigZag32(b []byte, h unsafe.Pointer) error {
 		vv = append(vv, int32(protowire.DecodeZigZag(v)))
 		b = b[n:]
 	}
-	*(*[]int32)(h) = vv
+	setPacked(h, vv)
 	return nil
 }
 
@@ -166,7 +179,7 @@ func DecodePackedFixed64(b []byte, h unsafe.Pointer) error {
 				uint64(b[4])<<32|uint64(b[5])<<40|uint64(b[6])<<48|uint64(b[7])<<56)
 		b = b[8:]
 	}
-	*(*[]uint64)(h) = vv
+	setPacked(h, vv)
 	return nil
 }
 
@@ -180,15 +193,36 @@ func DecodePackedFixed32(b []byte, h unsafe.Pointer) error {
 		vv = append(vv, uint32(b[0])<<0|uint32(b[1])<<8|uint32(b[2])<<16|uint32(b[3])<<24)
 		b = b[4:]
 	}
-	*(*[]uint32)(h) = vv
+	setPacked(h, vv)
 	return nil
 }
 
 func DecodePackedBool(b []byte, h unsafe.Pointer) error {
-	vv := make([]bool, len(b))
-	for i, c := range b {
-		vv[i] = c > 0
+	sz := 0
+	for _, v := range b {
+		if v < 0x80 {
+			sz++
+		}
 	}
-	*(*[]bool)(h) = vv
+	vv := make([]bool, 0, sz)
+	for len(b) > 0 {
+		var v uint64
+		var n int
+		if len(b) >= 1 && b[0] < 0x80 {
+			v = uint64(b[0])
+			n = 1
+		} else if len(b) >= 2 && b[1] < 0x80 {
+			v = uint64(b[0]&0x7f) + uint64(b[1])<<7
+			n = 2
+		} else {
+			v, n = protowire.ConsumeVarint(b)
+		}
+		if n < 0 {
+			return io.ErrUnexpectedEOF
+		}
+		vv = append(vv, v != 0) // bools are varints on the wire, not bytes
+		b = b[n:]
+	}
+	setPacked(h, vv)
 	return nil
 }

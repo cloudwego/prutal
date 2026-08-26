@@ -107,6 +107,10 @@ func init() {
 	register(CoderBool, CoderBool, DecodeMap_Bool_Bool)
 }
 
+// TODO: map entry parsing below requires key-then-value order and both fields
+// present, and does not skip unknown fields inside an entry. The protobuf wire
+// format allows any field order, omitted key/value (defaults apply) and unknown
+// entry fields, so some spec-valid input from other encoders is rejected.
 func decodeMap_Varint(b []byte, num int32) (v uint64, n int, err error) {
 	fn, typ := ConsumeKVTag(b)
 	if fn != num {
@@ -177,7 +181,15 @@ func decodeMap_Bool(b []byte, num int32) (bool, int, error) {
 	if typ != TypeVarint {
 		return false, 0, newTypeNotMatchErr(typ, TypeVarint)
 	}
-	return b[1] != 0, 2, nil
+	if b[1] < 0x80 { // fast path: canonical single-byte bool
+		return b[1] != 0, 2, nil
+	}
+	// spec-valid over-long varints (e.g. 82 00) fall back to a real consume
+	v, n := protowire.ConsumeVarint(b[1:])
+	if n < 0 {
+		return false, 0, protowire.ParseError(n)
+	}
+	return v != 0, n + 1, nil // +1 for the tag byte
 }
 
 func DecodeMap_VarintU32_VarintU32(b []byte, mp unsafe.Pointer) error {

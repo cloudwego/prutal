@@ -100,3 +100,25 @@ func TestDecodePackedBool(t *testing.T) {
 	assert.SliceEqual(t, vv0, vv1)
 
 }
+
+// A packed field may occur multiple times on the wire; the elements of all
+// occurrences must be concatenated, not replace each other.
+func TestDecodePackedMultiOccurrence(t *testing.T) {
+	h := &[]uint64{}
+	assert.NoError(t, DecodePackedVarintU64([]byte{1, 2}, unsafe.Pointer(h)))
+	assert.NoError(t, DecodePackedVarintU64([]byte{3}, unsafe.Pointer(h)))
+	assert.SliceEqual(t, []uint64{1, 2, 3}, *h)
+
+	hb := &[]bool{}
+	assert.NoError(t, DecodePackedBool([]byte{1}, unsafe.Pointer(hb)))
+	assert.NoError(t, DecodePackedBool([]byte{0}, unsafe.Pointer(hb)))
+	assert.SliceEqual(t, []bool{true, false}, *hb)
+}
+
+// Bool elements are varints on the wire, so spec-valid over-long encodings
+// (e.g. 0x82 0x00 for true) must decode correctly.
+func TestDecodePackedBool_Varints(t *testing.T) {
+	vv := []bool{}
+	assert.NoError(t, DecodePackedBool([]byte{0x80, 0x00, 0x82, 0x00}, unsafe.Pointer(&vv)))
+	assert.SliceEqual(t, []bool{false, true}, vv)
+}

@@ -275,6 +275,10 @@ func appendMapValue_String(b []byte, v string) []byte {
 }
 
 // VarintU32 key encoders
+// The map entry encoders below always write the key (field #1) first, then
+// the value (field #2), both present, with no extra fields. This canonical
+// form is what the strict entry decoders in decoder_map.go rely on (see the
+// TODO there); do not reorder or omit fields without loosening the decoders.
 func AppendMap_VarintU32_VarintU32(b []byte, tag uint64, p unsafe.Pointer) []byte {
 	m := *(*map[uint32]uint32)(p)
 	for k, v := range m {
