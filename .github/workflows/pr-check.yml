@@ -16,6 +16,19 @@ jobs:
       - name: Check Spell
         uses: crate-ci/typos@master
 
+  build-32bit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      # 32-bit is supported (e.g. skipzero must not treat empty strings as
+      # non-zero there); cross-compile to keep the port buildable
+      - name: Cross-compile check (linux/386)
+        run: GOOS=linux GOARCH=386 go build ./...
+
   golangci-lint:
     runs-on: ubuntu-latest
     steps:

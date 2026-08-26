@@ -100,3 +100,62 @@ func TestFieldIDBoundary(t *testing.T) {
 	assert.NoError(t, Unmarshal(b, &v))
 	assert.Equal(t, int64(42), v.F)
 }
+
+// Unmarshal into a typed-nil message pointer must return an error, not crash.
+func TestUnmarshalNilMessage(t *testing.T) {
+	err := Unmarshal([]byte{0x08, 0x01}, (*TestOneofMessage)(nil))
+	assert.True(t, err != nil)
+}
+
+// A set oneof member must be serialized even when its value is the zero
+// value, otherwise the chosen case is lost on round-trip.
+func TestOneofZeroValueRoundTrip(t *testing.T) {
+	src := &TestOneofMessage{OneOfFieldA: &TestOneofMessage_Field1{}}
+
+	b, err := MarshalAppend(nil, src)
+	assert.NoError(t, err)
+	sz, err := Size(src)
+	assert.NoError(t, err)
+	assert.Equal(t, sz, len(b)) // tag + len-0 payload
+
+	var dst TestOneofMessage
+	assert.NoError(t, Unmarshal(b, &dst))
+	_, ok := dst.OneOfFieldA.(*TestOneofMessage_Field1)
+	assert.True(t, ok)
+}
+
+// Unpacked and packed occurrences of the same repeated field must be
+// concatenated on decode, per protobuf merge semantics.
+func TestPackedAndUnpackedMixDecode(t *testing.T) {
+	// field 1 (uint64): unpacked element 5, then packed run [1, 2]
+	b := []byte{0x08, 0x05, 0x0a, 0x02, 0x01, 0x02}
+	var v struct {
+		F []uint64 `protobuf:"varint,1,rep,packed"`
+	}
+	assert.NoError(t, Unmarshal(b, &v))
+	assert.SliceEqual(t, []uint64{5, 1, 2}, v.F)
+}
+
+// Map nesting must cost one recursion level on both the encode and decode
+// sides. The pre-fix decoder consumed two levels per map hop, so messages
+// deeper than half the budget passed Marshal but failed Unmarshal.
+func TestMapDepthBudgetRoundTrip(t *testing.T) {
+	const depth = 600 // > defaultRecursionMaxDepth/2, < the budget itself
+	bottom := &mapDepthMsg{Leaf: 1}
+	v := bottom
+	for i := 0; i < depth; i++ {
+		m := map[int64]*mapDepthMsg{1: v}
+		v = &mapDepthMsg{Next: m}
+	}
+
+	b, err := MarshalAppend(nil, v)
+	assert.NoError(t, err)
+	var dst mapDepthMsg
+	assert.NoError(t, Unmarshal(b, &dst))
+}
+
+type mapDepthMsg struct {
+	Leaf int64                  `protobuf:"varint,1,opt"`
+	Next map[int64]*mapDepthMsg `protobuf:"bytes,2,rep" protobuf_key:"varint,1,opt" protobuf_val:"bytes,2,opt"`
+	_    [0]func()              // no-copy pointer: keep this type unpointable
+}

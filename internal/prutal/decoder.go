@@ -282,7 +282,7 @@ func (d *Decoder) DecodeStruct(b []byte, base unsafe.Pointer, s *desc.StructDesc
 					if tmv == nil {
 						tmv = f.T.MapTmpVarsPool.Get().(*desc.TmpMapVars)
 					}
-					if _, err := d.DecodeMapPair(fb, p, f, tmv, maxdepth-1); err != nil {
+					if _, err := d.DecodeMapPair(fb, p, f, tmv, maxdepth); err != nil {
 						return i, err
 					}
 				}
@@ -529,6 +529,9 @@ func (d *Decoder) DecodeMapValue(b []byte, p unsafe.Pointer, f *desc.FieldDesc, 
 	return i, nil
 }
 
+// TODO: this requires key-then-value order and both fields present in the
+// entry (same limitation as the fast DecodeMap* paths in internal/wire).
+// The wire format allows any order, omitted key/value and unknown entry fields.
 func (d *Decoder) DecodeMapPair(b []byte, p unsafe.Pointer, f *desc.FieldDesc, tmp *desc.TmpMapVars, maxdepth int) (int, error) {
 	tmp.Reset()
 

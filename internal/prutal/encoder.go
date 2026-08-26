@@ -69,16 +69,21 @@ func (e *Encoder) AppendStruct(b []byte, base unsafe.Pointer, s *desc.StructDesc
 		// this also checks pointer types
 		skipzero := false
 		switch {
+		case t.SliceLike: // for slice or string, both can use StringHeader
+			// must be checked before t.Size: on 386 a string header is
+			// 8 bytes and "" has a non-nil data pointer, so the size-based
+			// case would wrongly treat an empty string as non-zero
+			skipzero = ((*hack.StringHeader)(p)).Len == 0
 		case t.Size == 8: // int64, uint64, float64 or pointer on amd64
 			skipzero = *(*uint64)(p) == 0
 		case t.Size == 4: // int32, uint32, float32 or pointer on 386
 			skipzero = *(*uint32)(p) == 0
 		case t.Size == 1: // bool?
 			skipzero = *(*uint8)(p) == 0
-		case t.SliceLike: // for slice or string, both can use StringHeader
-			skipzero = ((*hack.StringHeader)(p)).Len == 0
 		}
-		if skipzero {
+		// a set oneof member must be serialized even with a zero value,
+		// otherwise the chosen case is lost on round-trip
+		if skipzero && !f.IsOneof() {
 			continue
 		}
 
@@ -223,7 +228,8 @@ func (e *Encoder) AppendMapField(b []byte, f *desc.FieldDesc, p unsafe.Pointer, 
 		b = wire.LenReserve(b)
 		beforesz := len(b)
 
-		// Key
+		// Key then value, both always present: the canonical form the strict
+		// entry decoders rely on (see the TODO in wire/decoder_map.go)
 		b = wire.AppendKeyTag(b, f.KeyWireType)
 		b = f.KeyAppendFunc(b, kp)
 
