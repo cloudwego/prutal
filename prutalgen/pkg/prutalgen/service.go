@@ -67,7 +67,7 @@ type Method struct {
 	InlineComment string
 	Directives    Directives
 
-	Name   string // orignal name in IDL
+	Name   string // original name in IDL
 	GoName string
 
 	Request *Type

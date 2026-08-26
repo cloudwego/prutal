@@ -31,7 +31,7 @@ type Enum struct {
 	InlineComment string
 	Directives    Directives
 
-	Name string // orignial name in proto
+	Name string // original name in proto
 
 	GoName  string
 	Fields  []*EnumField
@@ -187,7 +187,7 @@ type EnumField struct {
 	InlineComment string
 	Directives    Directives
 
-	Name string // orignial name in proto
+	Name string // original name in proto
 
 	GoName  string
 	Value   int32

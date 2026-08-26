@@ -74,7 +74,7 @@ func (x *streamContext) consumeHeadComment(c antlr.ParserRuleContext) string {
 		if tp == parser.ProtobufParserWS {
 			if strings.Count(s, "\n") > 1 {
 				// normally only one new line between 2 comment tokens are expected
-				// if we got more than one \n, likely it's an empty line to seperate two definitions
+				// if we got more than one \n, likely it's an empty line to separate two definitions
 				break
 			}
 		}
@@ -110,7 +110,7 @@ func (x *streamContext) consumeInlineComment(c antlr.ParserRuleContext) string {
 		}
 		if tp == parser.ProtobufParserWS {
 			if strings.Contains(s, "\n") {
-				return "" // newline? the commment may not belong to the given rule
+				return "" // newline? the comment may not belong to the given rule
 			}
 			continue // skip parser.ProtobufParserWS
 		}

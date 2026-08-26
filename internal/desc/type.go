@@ -107,8 +107,6 @@ var (
 	cachedTypes = map[reflect.Type]*Type{}
 )
 
-func noopFinalizeField(_ *Type) error { return nil }
-
 func parseType(rt reflect.Type) (t *Type, err error) {
 	if t = cachedTypes[rt]; t != nil {
 		return t, nil
@@ -127,7 +125,7 @@ func parseType(rt reflect.Type) (t *Type, err error) {
 	t.Kind = reflectTypeKind(rt)
 
 	switch t.Kind {
-	case reflect.Ptr, reflect.Slice, KindBytes, reflect.String,
+	case reflect.Pointer, reflect.Slice, KindBytes, reflect.String,
 		reflect.Map, reflect.Struct:
 		// for these types, we can't use span mem allocator
 		// coz then may contain pointer

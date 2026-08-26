@@ -23,7 +23,7 @@ func TestDeepEqual(t *testing.T) {
 		Data string
 	}
 	type TestStruct struct {
-		unexported int
+		unexported int //nolint:unused // fixture: deep-equal must skip unexported fields
 
 		M *Msg
 

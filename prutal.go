@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+// Package prutal provides reflection-based protobuf marshaling and
+// unmarshaling.
 package prutal
 
 import (

@@ -87,7 +87,7 @@ func (f *Field) IsPackedEncoding() bool {
 	if f.IsMap() {
 		return false
 	}
-	if !(scalarPackedTypes[f.Type.Name] || f.Type.IsEnum()) {
+	if !scalarPackedTypes[f.Type.Name] && !f.Type.IsEnum() {
 		return false
 	}
 
@@ -284,7 +284,7 @@ type fieldWithKeyTypeContext interface {
 
 type noKeyTypeContext struct{ fieldContext }
 
-func (_ noKeyTypeContext) KeyType() parser.IKeyTypeContext { return nil }
+func (noKeyTypeContext) KeyType() parser.IKeyTypeContext { return nil }
 
 func (x *protoLoader) newField(c fieldWithKeyTypeContext) *Field {
 	ft := c.FieldType()

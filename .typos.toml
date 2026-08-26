@@ -1,4 +1,15 @@
 # Typo check: https://github.com/crate-ci/typos
 
 [files]
-extend-exclude = ["go.mod", "go.sum" ]
+extend-exclude = [
+  "go.mod",
+  "go.sum",
+  # Generated, ported, or vendored code.
+  "prutalgen/internal/antlr/**",
+  "prutalgen/internal/parser/**",
+  "prutalgen/internal/protobuf/**",
+  "internal/protowire/wire.go",
+  "internal/protowire/wire_test.go",
+  # Deliberately abbreviated identifiers used as reserved-name fixtures.
+  "prutalgen/pkg/prutalgen/reserved_test.go",
+]

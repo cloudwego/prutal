@@ -161,6 +161,7 @@ func validateGoPackageConsistency(protos []*Proto) error {
 				previousIdentity = previous.GoPackage
 			}
 			if previousIdentity != identity {
+				//nolint:staticcheck // match protoc-gen-go's diagnostic wording
 				return fmt.Errorf("Go package %q has inconsistent names %q (%s) and %q (%s)",
 					p.GoImport, previousIdentity, previous.ProtoFile, identity, p.ProtoFile)
 			}

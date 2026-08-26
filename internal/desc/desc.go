@@ -344,7 +344,7 @@ func (f *FieldDesc) checkTypeMatch() error {
 			return fmt.Errorf("unsupported map value pointer to non-message type %s", t.T)
 		}
 		// slice/map values would flatten to a scalar RealKind, pass the
-		// match below and then be mis-encoded by a flat value coder
+		// match below and then be incorrectly encoded by a flat value coder
 		if t.V.IsSlice || t.V.Kind == reflect.Map {
 			return fmt.Errorf("unsupported map value type %s", t.T)
 		}

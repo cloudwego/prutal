@@ -18,7 +18,7 @@ package args
 
 import "strings"
 
-// StringArgs impelements https://pkg.go.dev/flag#Value for []string
+// StringArgs implements https://pkg.go.dev/flag#Value for []string
 type StringArgs []string
 
 // String ...

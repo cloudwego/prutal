@@ -45,6 +45,7 @@ type Decoder struct {
 func (d *Decoder) Malloc(n, align int, abiType uintptr) unsafe.Pointer {
 	if n > defaultDecoderSpanSize/4 || abiType != 0 {
 		// too large, or it needs GC to scan (MallocAbiType != 0 of tType)
+		//nolint:govet // mallocgc expects the runtime type pointer stored in abiType
 		return mallocgc(uintptr(n), unsafe.Pointer(abiType), abiType != 0)
 	}
 	return d.s.Malloc(n, align) // only for noscan objects like string.Data, []int etc...
@@ -94,8 +95,8 @@ func (d *Decoder) DecodeStruct(b []byte, base unsafe.Pointer, s *desc.StructDesc
 	i := 0
 
 	var (
-		f   *desc.FieldDesc  // cache last field, optmize for repeated
-		tmv *desc.TmpMapVars // cache for map, optmize for repeated map
+		f   *desc.FieldDesc  // cache last field, optimize for repeated
+		tmv *desc.TmpMapVars // cache for map, optimize for repeated map
 	)
 
 	// reset unknownfields = unknownfields[:0]

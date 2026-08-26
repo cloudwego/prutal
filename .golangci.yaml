@@ -1,3 +1,8 @@
-issues:
-  exclude-dirs:
-    - prutalgen/internal/antlr
+version: "2"
+linters:
+  exclusions:
+    paths:
+      # vendored / ported third-party code
+      - prutalgen/internal/antlr
+      - prutalgen/internal/parser
+      - prutalgen/internal/protobuf

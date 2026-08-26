@@ -235,6 +235,9 @@ func IfaceData(p unsafe.Pointer) unsafe.Pointer {
 //
 // p MUST point to an interface{} value
 func IfaceTypePtr(p unsafe.Pointer) uintptr {
+	// tab is intentionally stored as uintptr so the synthetic itab is not
+	// treated as a Go heap pointer; its layout is verified during init.
+	//nolint:govet // converting the stored runtime pointer is the purpose of this helper
 	return (*itab)(unsafe.Pointer((*Iface)(p).tab)).typ
 }
 
@@ -253,7 +256,7 @@ func IfaceTab(t reflect.Type, v reflect.Type) uintptr {
 	}
 	i := &Iface{}
 	reflect.NewAt(t, unsafe.Pointer(i)).Elem().Set(reflect.New(v))
-	return uintptr(unsafe.Pointer(i.tab))
+	return i.tab
 }
 
 // ReflectValueTypePtr extracts the abi.Type pointer from a reflect.Value.

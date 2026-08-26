@@ -107,7 +107,7 @@ func fillRandomValue(v reflect.Value, oo FillOptions) {
 	oo.RecursionDepth--
 
 	// Handle indirection for pointers
-	for v.Kind() == reflect.Ptr {
+	for v.Kind() == reflect.Pointer {
 		if v.IsNil() {
 			if !v.CanSet() {
 				return

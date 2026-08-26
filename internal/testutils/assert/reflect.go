@@ -122,7 +122,7 @@ func newNotEqual(a, b reflect.Value) error {
 }
 
 func dereference(v reflect.Value) reflect.Value {
-	for v.Kind() == reflect.Ptr || v.Kind() == reflect.Interface {
+	for v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface {
 		v = v.Elem()
 	}
 	return v

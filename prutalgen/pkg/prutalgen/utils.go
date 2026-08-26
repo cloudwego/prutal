@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 
 	"github.com/cloudwego/prutal/prutalgen/internal/antlr"
 
@@ -64,14 +63,6 @@ func getRuleIndex(v antlr.Tree) int {
 func getTokenPos(v antlr.ParserRuleContext) string {
 	t := v.GetStart()
 	return fmt.Sprintf("line %d column %d", t.GetLine(), t.GetColumn())
-}
-
-func parseI32(c antlr.ParserRuleContext) (int32, error) {
-	v, err := strconv.ParseInt(c.GetText(), 10, 32)
-	if err != nil {
-		return 0, fmt.Errorf("%s - %w", getTokenPos(c), err)
-	}
-	return int32(v), nil
 }
 
 func isfalse(v string) bool { return v == "false" }

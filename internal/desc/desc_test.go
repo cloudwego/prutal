@@ -718,7 +718,7 @@ func TestParseErrorKeepsSuccessfulDescriptors(t *testing.T) {
 	assert.Equal(t, root, wrapper.GetField(1).T.V.S)
 }
 
-// Hand-written structs whose tag/type combination would be mis-encoded
+// Hand-written structs whose tag/type combination would be incorrectly encoded
 // (pointer bits leaked, slice headers read as scalars, panics on invalid
 // field numbers) must be rejected by GetOrParse.
 func TestGetOrParseReject(t *testing.T) {

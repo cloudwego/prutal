@@ -98,13 +98,6 @@ func getMapDecodeFunc(f *FieldDesc) wire.DecodeFunc {
 	return wire.GetMapDecoderFunc(kt, vt)
 }
 
-func dereferenceTypeKind(t reflect.Type) reflect.Kind {
-	for t.Kind() == reflect.Pointer {
-		t = t.Elem()
-	}
-	return reflectTypeKind(t)
-}
-
 func dereferenceElemKind(t reflect.Type) reflect.Kind {
 	for t.Kind() == reflect.Pointer || t.Kind() == reflect.Slice {
 		t = t.Elem()
