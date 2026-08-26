@@ -485,7 +485,7 @@ func parseStruct(rt reflect.Type) (s *StructDesc, err error) {
 	maxn := 0
 	for i, f := range s.Fields {
 		if f.ID > maxDirectFieldMapID {
-			k = len(s.Fields) - 1 - i
+			k = len(s.Fields) - i
 			break
 		}
 		maxn = int(f.ID)
