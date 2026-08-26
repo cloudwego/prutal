@@ -26,12 +26,12 @@ import (
 func TestLoader_Proto(t *testing.T) {
 	x := NewLoader([]string{"."}, nil)
 	x.SetLogger(&testLogger{t})
-	empty := writeFile(t, "empty.proto", []byte(`option go_package = "empty";`))
+	empty := writeFile(t, "empty.proto", []byte(`option go_package = "example.com/empty";`))
 	fn := writeFile(t, "test.proto", []byte(fmt.Sprintf(`
 syntax = "proto3";
 package prutal_test;
 import public "%s";
-option go_package = "hello/prutal_test; prutal";`, empty)))
+option go_package = "hello/prutal_test;prutal";`, empty)))
 	ff := x.LoadProto(fn)
 	assert.Equal(t, 2, len(ff))
 	f := ff[0]

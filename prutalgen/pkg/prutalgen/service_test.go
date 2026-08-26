@@ -24,7 +24,7 @@ import (
 
 func TestLoader_Service(t *testing.T) {
 	p := loadTestProto(t, `
-option go_package = "echo";
+option go_package = "example.com/echo";
 message M {
   string Msg = 1;
 }
@@ -45,7 +45,7 @@ service echo_service {
 	assert.False(t, rpc.ReturnStream)
 
 	p = loadTestProto(t, `
-option go_package = "echo";
+option go_package = "example.com/echo";
 message M {
   string Msg = 1;
 }

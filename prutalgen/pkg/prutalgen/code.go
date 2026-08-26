@@ -183,16 +183,19 @@ func (g *GoCodeGen) EnumGen(e *Enum, w *CodeWriter) {
 		w.F("}")
 
 		// String func
-		w.UsePkg("strconv", "")
+		strconvPkg := w.UsePkgAlias("strconv", "")
 		w.F("func (x %s) String() string {", e.GoName)
 		w.F("s, ok := %s_name[int32(x)]", e.GoName)
 		w.F("if ok { return s }")
-		w.F("return strconv.Itoa(int(x))")
+		w.F("return %s.Itoa(int(x))", strconvPkg)
 		w.F("}")
 	}
 }
 
 func (g *GoCodeGen) MessageGen(m *Message, w *CodeWriter) {
+	for _, f := range m.Fields {
+		g.useFieldPackages(f, w)
+	}
 	if m.HeadComment != "" {
 		w.F("%s", m.HeadComment)
 	}
@@ -231,9 +234,9 @@ func (g *GoCodeGen) MessageGen(m *Message, w *CodeWriter) {
 	w.F("\nfunc (x *%s) Reset() { *x = %s{} }", m.GoName, m.GoName)
 
 	if g.Marshaler&MarshalerKitexProtobuf != 0 {
-		w.UsePkg("github.com/cloudwego/prutal", "")
-		w.F("\nfunc (x *%s) Marshal(in []byte) ([]byte, error) { return prutal.MarshalAppend(in, x) }", m.GoName)
-		w.F("\nfunc (x *%s) Unmarshal(in []byte) error { return prutal.Unmarshal(in, x) }", m.GoName)
+		prutalPkg := w.UsePkgAlias("github.com/cloudwego/prutal", "")
+		w.F("\nfunc (x *%s) Marshal(in []byte) ([]byte, error) { return %s.MarshalAppend(in, x) }", m.GoName, prutalPkg)
+		w.F("\nfunc (x *%s) Unmarshal(in []byte) error { return %s.Unmarshal(in, x) }", m.GoName, prutalPkg)
 	}
 
 	for k := range generatedOneOfField {
@@ -356,15 +359,19 @@ func (g *GoCodeGen) FieldStructTag(f *Field) []byte {
 }
 
 func (g *GoCodeGen) FieldGen(f *Field, w *CodeWriter) {
+	g.useFieldPackages(f, w)
 	if f.HeadComment != "" {
 		w.F("%s", f.HeadComment)
 	}
 	w.F("%s %s `%s` %s", f.GoName, f.GoTypeName(), g.FieldStructTag(f), trailingComment(f.InlineComment))
-	if f.Type.IsExternalType() {
-		w.UsePkg(f.Type.GoImport(), "")
-	}
-	if f.Key != nil && f.Key.IsExternalType() {
-		w.UsePkg(f.Key.GoImport(), "")
+}
+
+func (g *GoCodeGen) useFieldPackages(f *Field, w *CodeWriter) {
+	for _, typ := range []*Type{f.Key, f.Type} {
+		if typ == nil || !typ.IsExternalType() {
+			continue
+		}
+		typ.goPackageName = w.UsePkgAlias(typ.GoImport(), "")
 	}
 }
 

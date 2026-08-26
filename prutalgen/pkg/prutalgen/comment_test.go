@@ -24,7 +24,7 @@ import (
 
 func TestConsumeComment(t *testing.T) {
 
-	f := loadTestProto(t, `option go_package = "testcomment";
+	f := loadTestProto(t, `option go_package = "example.com/testcomment";
 
 // comment line1
 message Hello {

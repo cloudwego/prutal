@@ -39,7 +39,7 @@ func TestReservedRange(t *testing.T) {
 
 func TestLoader_Reserved(t *testing.T) {
 	p := loadTestProto(t, `
-option go_package = "testmessage";
+option go_package = "example.com/testmessage";
 message M {
   string f = 1;
 

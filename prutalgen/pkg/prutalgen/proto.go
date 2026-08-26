@@ -19,10 +19,12 @@ package prutalgen
 import (
 	"errors"
 	"fmt"
+	"go/token"
 	"path"
 	"strings"
 
 	"github.com/cloudwego/prutal/prutalgen/internal/parser"
+	"github.com/cloudwego/prutal/prutalgen/internal/protobuf/strs"
 	"github.com/cloudwego/prutal/prutalgen/internal/protobuf/text"
 )
 
@@ -42,6 +44,9 @@ type Proto struct {
 
 	GoImport  string // the full import path
 	GoPackage string // package name without path
+	// goPackageExplicit reports whether GoPackage came from the suffix after
+	// a semicolon instead of being derived from GoImport.
+	goPackageExplicit bool
 
 	Directives Directives
 
@@ -74,11 +79,42 @@ func (p *Proto) setGoPackage(s string) {
 	imp = strings.TrimSpace(imp)
 	pkg = strings.TrimSpace(pkg)
 	p.GoImport = imp
+	p.goPackageExplicit = pkg != ""
 	if pkg != "" {
 		p.GoPackage = pkg
 	} else if p.GoImport != "" {
-		p.GoPackage = path.Base(p.GoImport)
+		p.GoPackage = strs.GoSanitized(path.Base(p.GoImport))
+	} else {
+		p.GoPackage = ""
 	}
+}
+
+func (p *Proto) validateGoPackage() error {
+	if p.GoImport == "" {
+		return fmt.Errorf("unable to determine Go import path for %q", p.ProtoFile)
+	}
+	if !strings.ContainsAny(p.GoImport, "./") {
+		return fmt.Errorf("invalid Go import path %q for %q", p.GoImport, p.ProtoFile)
+	}
+	if p.GoPackage == "" {
+		return fmt.Errorf("unable to determine Go package name for %q", p.ProtoFile)
+	}
+	if p.goPackageExplicit && !token.IsIdentifier(p.GoPackage) {
+		return fmt.Errorf("invalid Go package name %q for %q", p.GoPackage, p.ProtoFile)
+	}
+	return nil
+}
+
+func validateGoPackageConsistency(protos []*Proto) error {
+	packageFiles := make(map[string]*Proto, len(protos))
+	for _, p := range protos {
+		if previous := packageFiles[p.GoImport]; previous != nil && previous.GoPackage != p.GoPackage {
+			return fmt.Errorf("Go package %q has inconsistent names %q (%s) and %q (%s)",
+				p.GoImport, previous.GoPackage, previous.ProtoFile, p.GoPackage, p.ProtoFile)
+		}
+		packageFiles[p.GoImport] = p
+	}
+	return nil
 }
 
 func (p *Proto) getType(name string) any {

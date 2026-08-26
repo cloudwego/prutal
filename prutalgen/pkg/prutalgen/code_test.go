@@ -203,3 +203,131 @@ func TestProtoGenTrailingComments(t *testing.T) {
 	assert.False(t, strings.Contains(src, "enum value multi"))
 	assert.False(t, strings.Contains(src, "field multi"))
 }
+
+func TestProtoGenUsesAllocatedImportAliases(t *testing.T) {
+	p := &Proto{GoPackage: "test"}
+	targets := []*Proto{
+		{GoImport: "example.com/a/bar", GoPackage: "first"},
+		{GoImport: "example.net/b/bar", GoPackage: "second"},
+		{GoImport: "example.org/string", GoPackage: "third"},
+	}
+	fields := make([]*Field, len(targets))
+	for i, target := range targets {
+		declaration := &Message{GoName: string(rune('A' + i)), Proto: target}
+		target.Messages = []*Message{declaration}
+		fields[i] = &Field{
+			GoName:      "Field" + string(rune('A'+i)),
+			FieldNumber: int32(i + 1),
+			Type:        &Type{Name: declaration.Name, typ: declaration, p: target},
+		}
+	}
+	m := &Message{GoName: "M", Fields: fields, Proto: p}
+	for _, f := range fields {
+		f.Msg = m
+	}
+	p.Messages = []*Message{m}
+
+	w := NewCodeWriter("", p.GoPackage)
+	NewGoCodeGen().ProtoGen(p, w)
+	src := string(w.Bytes())
+	_, err := format.Source([]byte(src))
+	assert.NoError(t, err)
+	assert.True(t, strings.Contains(src, "FieldA *bar.A"))
+	assert.True(t, strings.Contains(src, "FieldB *bar1.B"))
+	assert.True(t, strings.Contains(src, "FieldC *string1.C"))
+	assert.True(t, strings.Contains(src, `bar "example.com/a/bar"`))
+}
+
+func TestProtoGenUsesAllocatedRuntimeAlias(t *testing.T) {
+	p := &Proto{GoPackage: "test"}
+	target := &Proto{GoImport: "example.com/acme/prutal", GoPackage: "different"}
+	declaration := &Message{GoName: "External", Proto: target}
+	field := &Field{
+		GoName:      "External",
+		FieldNumber: 1,
+		Type:        &Type{Name: "External", typ: declaration, p: target},
+	}
+	message := &Message{GoName: "M", Fields: []*Field{field}, Proto: p}
+	field.Msg = message
+	p.Messages = []*Message{message}
+
+	g := NewGoCodeGen()
+	g.Marshaler = MarshalerKitexProtobuf
+	w := NewCodeWriter("", p.GoPackage)
+	g.ProtoGen(p, w)
+	src := string(w.Bytes())
+	_, err := format.Source([]byte(src))
+	assert.NoError(t, err)
+	assert.True(t, strings.Contains(src, `prutal "example.com/acme/prutal"`))
+	assert.True(t, strings.Contains(src, `prutal1 "github.com/cloudwego/prutal"`))
+	assert.True(t, strings.Contains(src, "return prutal1.MarshalAppend(in, x)"))
+	assert.True(t, strings.Contains(src, "return prutal1.Unmarshal(in, x)"))
+}
+
+func TestProtoGenUsesAllocatedStrconvAlias(t *testing.T) {
+	p := &Proto{GoPackage: "test"}
+	p.Enums = []*Enum{{
+		GoName: "E",
+		Fields: []*EnumField{{
+			GoName: "E_ZERO",
+		}},
+		Proto: p,
+	}}
+	target := &Proto{GoImport: "example.com/acme/strconv", GoPackage: "different"}
+	declaration := &Message{GoName: "External", Proto: target}
+	field := &Field{
+		GoName:      "External",
+		FieldNumber: 1,
+		Type:        &Type{Name: "External", typ: declaration, p: target},
+	}
+	message := &Message{GoName: "M", Fields: []*Field{field}, Proto: p}
+	field.Msg = message
+	p.Messages = []*Message{message}
+
+	w := NewCodeWriter("", p.GoPackage)
+	NewGoCodeGen().ProtoGen(p, w)
+	src := string(w.Bytes())
+	_, err := format.Source([]byte(src))
+	assert.NoError(t, err)
+	assert.True(t, strings.Contains(src, `strconv "strconv"`))
+	assert.True(t, strings.Contains(src, `strconv1 "example.com/acme/strconv"`))
+	assert.True(t, strings.Contains(src, "return strconv.Itoa(int(x))"))
+	assert.True(t, strings.Contains(src, "External *strconv1.External"))
+}
+
+func TestFieldAndOneofGenTrackExternalPackages(t *testing.T) {
+	target := &Proto{GoImport: "time", GoPackage: "time"}
+	declaration := &Message{GoName: "Duration", Proto: target}
+	local := &Message{GoName: "Local", Proto: &Proto{GoPackage: "test"}}
+	newField := func() *Field {
+		return &Field{
+			GoName:      "Value",
+			FieldNumber: 1,
+			Type: &Type{
+				Name: "Duration",
+				typ:  declaration,
+				p:    target,
+			},
+			Msg: local,
+		}
+	}
+
+	g := NewGoCodeGen()
+	w := NewCodeWriter("", "test")
+	w.F("type Local struct {")
+	g.FieldGen(newField(), w)
+	w.F("}")
+	src := w.Bytes()
+	assert.StringContains(t, string(src), `time "time"`)
+	typeCheckSource(t, src)
+
+	oneof := &Oneof{Name: "choice", Msg: local}
+	field := newField()
+	field.Oneof = oneof
+	oneof.Fields = []*Field{field}
+	w = NewCodeWriter("", "test")
+	g.OneofGen(oneof, w)
+	src = w.Bytes()
+	assert.StringContains(t, string(src), `time "time"`)
+	typeCheckSource(t, src)
+}

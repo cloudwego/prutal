@@ -93,6 +93,9 @@ func (x *protoLoader) searchProtoFile(file string) string {
 func (x *protoLoader) LoadProto(file string) []*Proto {
 	x.reset()
 	_ = x.loadProto(file)
+	if err := validateGoPackageConsistency(x.protos); err != nil {
+		x.Fatalf("%s", err)
+	}
 	x.protos = sortProtoFiles(x.protos)       // sort by topological order
 	for i := len(x.protos) - 1; i >= 0; i-- { // resolve in reverse topological order
 		p := x.protos[i]
@@ -258,8 +261,8 @@ func (x *protoLoader) parseInput(in antlr.CharStream) {
 	if ok {
 		p.setGoPackage(gopkg)
 	}
-	if p.GoPackage == "" {
-		x.Fatalf(`option "go_package" not set`)
+	if err := p.validateGoPackage(); err != nil {
+		x.Fatalf("%s", err)
 	}
 }
 

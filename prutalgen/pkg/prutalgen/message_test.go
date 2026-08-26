@@ -112,7 +112,7 @@ func TestMessage_Verify(t *testing.T) {
 
 func TestLoader_Message(t *testing.T) {
 	p := loadTestProto(t, `
-option go_package = "testmessage";
+option go_package = "example.com/testmessage";
 message M {
 	message m {
 	}
@@ -141,7 +141,7 @@ message M {
 func TestLoader_MessageNestedNaming(t *testing.T) {
 	p := loadTestProto(t, `
 package test;
-option go_package = "testmessage";
+option go_package = "example.com/testmessage";
 
 message MyOuter {
 	message MyInner {}
@@ -165,7 +165,7 @@ message my_outer {
 
 func TestLoader_MessageFieldConflict(t *testing.T) {
 	p := loadTestProto(t, `
-option go_package = "testconflict";
+option go_package = "example.com/testconflict";
 message M {
 	string reset = 1;
 	string string = 2;
@@ -187,7 +187,7 @@ message M {
 
 func TestLoader_OneofWrapperTypeConflict(t *testing.T) {
 	p := loadTestProto(t, `
-option go_package = "testoneofconflict";
+option go_package = "example.com/testoneofconflict";
 message M {
 	message Foo {}
 	enum Bar { BAR0 = 0; }

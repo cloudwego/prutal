@@ -142,7 +142,7 @@ func TestField(t *testing.T) {
 
 func TestLoader_Field(t *testing.T) {
 	p := loadTestProto(t, `
-option go_package = "testfield";
+option go_package = "example.com/testfield";
 message M {
 required string email = 1;
 repeated string names = 2;

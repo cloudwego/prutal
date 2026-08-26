@@ -41,7 +41,7 @@ func TestOption(t *testing.T) {
 
 func TestLoader_Option(t *testing.T) {
 	p := loadTestProto(t, `
-option go_package = "testoption";
+option go_package = "example.com/testoption";
 
 option (prutal.test.proto) = "o1";
 

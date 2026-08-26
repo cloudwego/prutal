@@ -17,7 +17,12 @@
 package prutalgen
 
 import (
+	"go/ast"
 	"go/format"
+	"go/importer"
+	"go/parser"
+	"go/token"
+	"go/types"
 	"testing"
 )
 
@@ -37,6 +42,19 @@ func sourceEqual(t *testing.T, a, b []byte) {
 			"\n===============\n"+
 			"%s"+
 			"\n===============\n", a, b)
+	}
+}
+
+func typeCheckSource(t *testing.T, src []byte) {
+	t.Helper()
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "generated.go", src, parser.SkipObjectResolution)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := types.Config{Importer: importer.Default()}
+	if _, err := config.Check("generated", fset, []*ast.File{file}, nil); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -97,4 +115,59 @@ import (
   "fmt"
 )`), w.Bytes())
 
+}
+
+func TestCodeWriterAllocatesImportAliases(t *testing.T) {
+	w := NewCodeWriter("", "test")
+	if got := w.UsePkgAlias("example.com/a/bar", ""); got != "bar" {
+		t.Fatalf("first alias = %q, want bar", got)
+	}
+	if got := w.UsePkgAlias("example.net/b/bar", ""); got != "bar1" {
+		t.Fatalf("second alias = %q, want bar1", got)
+	}
+	if got := w.UsePkgAlias("example.org/string", ""); got != "string1" {
+		t.Fatalf("predeclared-name alias = %q, want string1", got)
+	}
+
+	w.F("var _ = bar.Value")
+	w.F("var _ = bar1.Value")
+	w.F("var _ = string1.Value")
+	sourceEqual(t, []byte(`package test
+
+import (
+	bar "example.com/a/bar"
+	bar1 "example.net/b/bar"
+	string1 "example.org/string"
+)
+
+var _ = bar.Value
+var _ = bar1.Value
+var _ = string1.Value
+`), w.Bytes())
+}
+
+func TestCodeWriterMixesImplicitAndAllocatedImports(t *testing.T) {
+	w := NewCodeWriter("", "test")
+	w.UsePkg("crypto/rand", "")
+	if got := w.UsePkgAlias("crypto/rand", ""); got != "rand" {
+		t.Fatalf("existing implicit import name = %q, want rand", got)
+	}
+	if got := w.UsePkgAlias("math/rand", ""); got != "rand1" {
+		t.Fatalf("colliding import alias = %q, want rand1", got)
+	}
+	w.F("var _ = rand.Reader")
+	w.F("var _ = rand1.Int")
+
+	src := w.Bytes()
+	sourceEqual(t, []byte(`package test
+
+import (
+	"crypto/rand"
+	rand1 "math/rand"
+)
+
+var _ = rand.Reader
+var _ = rand1.Int
+`), src)
+	typeCheckSource(t, src)
 }

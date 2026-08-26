@@ -19,9 +19,13 @@ package prutalgen
 import (
 	"bytes"
 	"fmt"
+	"go/types"
 	"path"
 	"sort"
+	"strconv"
 	"strings"
+
+	"github.com/cloudwego/prutal/prutalgen/internal/protobuf/strs"
 )
 
 const importPlaceHolder = "{PRUTALGEN_GO_IMPORTS}"
@@ -41,8 +45,10 @@ func defaultGroupingFunc(pkg string) int {
 
 // CodeWriter wraps a simple code writer used by prutal
 type CodeWriter struct {
-	buf  *bytes.Buffer
-	pkgs map[string]string // import -> alias
+	buf              *bytes.Buffer
+	pkgs             map[string]string // import -> alias
+	pkgNames         map[string]string // import -> qualifier
+	usedPackageNames map[string]bool
 
 	grouping ImportGroupingFunc
 }
@@ -50,8 +56,10 @@ type CodeWriter struct {
 // NewCodeWriter
 func NewCodeWriter(header, pkg string) *CodeWriter {
 	w := &CodeWriter{
-		buf:  &bytes.Buffer{},
-		pkgs: make(map[string]string),
+		buf:              &bytes.Buffer{},
+		pkgs:             make(map[string]string),
+		pkgNames:         make(map[string]string),
+		usedPackageNames: make(map[string]bool),
 
 		grouping: defaultGroupingFunc,
 	}
@@ -64,6 +72,15 @@ func (w *CodeWriter) Reset(header, pkg string) {
 	for k := range w.pkgs {
 		delete(w.pkgs, k)
 	}
+	for k := range w.pkgNames {
+		delete(w.pkgNames, k)
+	}
+	for k := range w.usedPackageNames {
+		delete(w.usedPackageNames, k)
+	}
+	for _, name := range types.Universe.Names() {
+		w.usedPackageNames[name] = true
+	}
 	if header != "" {
 		w.F("%s", header)
 		w.F("")
@@ -74,16 +91,45 @@ func (w *CodeWriter) Reset(header, pkg string) {
 	w.F("")
 }
 
-// UsePkg records packages used, and import them when calling `Bytes()`
-func (w *CodeWriter) UsePkg(p, a string) {
+// UsePkg records a package used by the generated source.
+func (w *CodeWriter) UsePkg(p, preferred string) {
 	if p == "" {
 		return
 	}
-	if path.Base(p) == a {
-		w.pkgs[p] = "" // remove alias if it's same as its path.Base
-	} else {
-		w.pkgs[p] = a
+	if _, ok := w.pkgs[p]; ok {
+		return
 	}
+	name := preferred
+	if name == "" {
+		name = strs.GoSanitized(path.Base(p))
+	}
+	if path.Base(p) == preferred {
+		preferred = ""
+	}
+	w.pkgs[p] = preferred
+	w.pkgNames[p] = name
+	w.usedPackageNames[name] = true
+}
+
+// UsePkgAlias records a package and returns the unique name used to qualify it.
+func (w *CodeWriter) UsePkgAlias(p, preferred string) string {
+	if p == "" {
+		return ""
+	}
+	if name, ok := w.pkgNames[p]; ok {
+		return name
+	}
+	name := preferred
+	if name == "" {
+		name = strs.GoSanitized(path.Base(p))
+	}
+	for i, original := 1, name; w.usedPackageNames[name]; i++ {
+		name = original + strconv.Itoa(i)
+	}
+	w.pkgs[p] = name
+	w.pkgNames[p] = name
+	w.usedPackageNames[name] = true
+	return name
 }
 
 // SetGroupingFunc updates the grouping func used when generating imports.

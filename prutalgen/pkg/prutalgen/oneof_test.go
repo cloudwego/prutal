@@ -24,7 +24,7 @@ import (
 
 func TestLoader_Oneof(t *testing.T) {
 	p := loadTestProto(t, `
-option go_package = "testoneof";
+option go_package = "example.com/testoneof";
 message M {
 	oneof test_oneof {
 		string name = 1;

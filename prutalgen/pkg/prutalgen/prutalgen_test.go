@@ -105,6 +105,48 @@ func TestLoader(t *testing.T) {
 	assert.Equal(t, "prutal", f.GoPackage) // go_package with package name
 }
 
+func TestGoPackageValidation(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		opt  string
+		err  string
+	}{
+		{"bare import path", "foo", "invalid Go import path"},
+		{"missing import path", ";foo", "unable to determine Go import path"},
+		{"keyword package name", "example.com/x;go", "invalid Go package name"},
+		{"invalid package name", "example.com/x;bad-name", "invalid Go package name"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := &Proto{ProtoFile: "test.proto"}
+			p.setGoPackage(tc.opt)
+			assert.ErrorContains(t, p.validateGoPackage(), tc.err)
+		})
+	}
+
+	p := &Proto{ProtoFile: "test.proto"}
+	p.setGoPackage("example.com/go")
+	assert.NoError(t, p.validateGoPackage())
+	assert.Equal(t, "_go", p.GoPackage)
+
+	p.setGoPackage("example.com/x;_go")
+	assert.NoError(t, p.validateGoPackage())
+	assert.Equal(t, "_go", p.GoPackage)
+}
+
+func TestGoPackageConsistency(t *testing.T) {
+	err := validateGoPackageConsistency([]*Proto{
+		{ProtoFile: "a.proto", GoImport: "example.com/shared", GoPackage: "a"},
+		{ProtoFile: "b.proto", GoImport: "example.com/shared", GoPackage: "b"},
+	})
+	assert.ErrorContains(t, err, "inconsistent names")
+
+	err = validateGoPackageConsistency([]*Proto{
+		{ProtoFile: "a.proto", GoImport: "example.com/shared", GoPackage: "shared"},
+		{ProtoFile: "b.proto", GoImport: "example.com/shared", GoPackage: "shared"},
+	})
+	assert.NoError(t, err)
+}
+
 func TestLoader_SyntaxError(t *testing.T) {
 	expectFail(t, `import "blabla"`, &expectLogger{t: t,
 		PrintContains: []string{`parsing`, `missing ';'`},
@@ -114,7 +156,7 @@ func TestLoader_SyntaxError(t *testing.T) {
 
 func TestLoader_NoGoPackage(t *testing.T) {
 	expectFail(t, ``, &expectLogger{t: t,
-		FatalContains: `option "go_package" not set`,
+		FatalContains: `unable to determine Go import path`,
 	})
 }
 

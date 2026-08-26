@@ -41,7 +41,7 @@ func TestType(t *testing.T) {
 
 	p.typ = e
 	assert.Equal(t, e.GoName, p.GoName())
-	p.p = &Proto{GoImport: "prutal/base"}
+	p.p = &Proto{GoImport: "prutal/base", GoPackage: "base"}
 	assert.Equal(t, "base."+e.GoName, p.GoName())
 
 	// test EncodingType
@@ -101,9 +101,10 @@ func TestType(t *testing.T) {
 	// resolve: not in same package
 	m = &Message{Proto: &Proto{
 		Imports: []*Import{{Proto: &Proto{
-			Package:  "base",
-			GoImport: "gobase",
-			Messages: []*Message{{Name: "response", GoName: "Response"}},
+			Package:   "base",
+			GoImport:  "gobase",
+			GoPackage: "gobase",
+			Messages:  []*Message{{Name: "response", GoName: "Response"}},
 		}}},
 	}}
 	p.typ, p.f, p.m = nil, nil, nil

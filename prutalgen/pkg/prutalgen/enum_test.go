@@ -203,7 +203,7 @@ enum Hex { HEX_MIN = -0x80000000; }
 
 func TestLoader_EnumAllowAlias(t *testing.T) {
 	f := loadTestProto(t, `
-option go_package = "test";
+option go_package = "example.com/test";
 enum Status {
   option allow_alias = true;
   UNKNOWN = 0;
@@ -230,7 +230,7 @@ enum Status {
 
 func TestLoader_Enum(t *testing.T) {
 	f := loadTestProto(t, `
-option go_package = "test";
+option go_package = "example.com/test";
 enum myEnum0 {
   ENUM0 = 0;
   ENUM1 = 1;

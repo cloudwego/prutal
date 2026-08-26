@@ -21,12 +21,14 @@ import (
 	"strings"
 
 	"github.com/cloudwego/prutal/prutalgen/internal/antlr"
+	"github.com/cloudwego/prutal/prutalgen/internal/protobuf/strs"
 )
 
 type Type struct {
 	Name string
 
-	p *Proto
+	p             *Proto
+	goPackageName string
 
 	// *Enum or *Message
 	typ any
@@ -59,7 +61,16 @@ func (t *Type) GoName() string {
 	if t.p == nil {
 		return ret
 	}
-	return path.Base(t.p.GoImport) + "." + ret
+	return t.GoPackageName() + "." + ret
+}
+
+// GoPackageName returns the package name used to qualify references to types
+// from the package this type belongs to. It is also used as the import alias.
+func (t *Type) GoPackageName() string {
+	if t.goPackageName != "" {
+		return t.goPackageName
+	}
+	return strs.GoSanitized(path.Base(t.p.GoImport))
 }
 
 func (t *Type) IsExternalType() bool {
@@ -130,6 +141,7 @@ func (t *Type) resolve(allowScalar bool) {
 
 	t.p = nil
 	t.typ = nil
+	t.goPackageName = ""
 
 	if allowScalar {
 		if _, ok := scalar2GoTypes[t.Name]; ok {

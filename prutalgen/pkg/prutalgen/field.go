@@ -18,7 +18,6 @@ package prutalgen
 
 import (
 	"fmt"
-	"path"
 	"strings"
 
 	"github.com/cloudwego/prutal/prutalgen/internal/antlr"
@@ -216,7 +215,7 @@ func (f *Field) GoZero() string {
 			if !tp.IsExternalType() {
 				return zero
 			}
-			return path.Base(tp.GoImport()) + "." + zero
+			return tp.GoPackageName() + "." + zero
 		}
 		return "0"
 	}
