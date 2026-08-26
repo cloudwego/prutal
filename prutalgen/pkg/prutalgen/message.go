@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/cloudwego/prutal/internal/protowire"
 	"github.com/cloudwego/prutal/prutalgen/internal/parser"
 	"github.com/cloudwego/prutal/prutalgen/internal/protobuf/strs"
 )
@@ -43,7 +44,9 @@ type Message struct {
 	Oneofs  []*Oneof
 	Options Options
 
-	reserved reservedRanges
+	reserved        reservedRanges
+	reservedNames   reservedNames
+	extensionRanges reservedRanges
 
 	Msg   *Message // for embedded message only
 	Proto *Proto
@@ -78,7 +81,7 @@ func (m *Message) FullName() string {
 }
 
 func (m *Message) IsReservedField(v int32) bool {
-	return m.reserved.In(v)
+	return v >= protobufReservedMin && v <= protobufReservedMax || m.reserved.In(v)
 }
 
 func (m *Message) genUnknownFields() bool {
@@ -212,9 +215,30 @@ func (m *Message) verify() error {
 		}
 	}
 	exists := map[int32]bool{}
+	for _, reserved := range m.reserved {
+		for _, extension := range m.extensionRanges {
+			if reserved.overlaps(extension) {
+				errs = append(errs, fmt.Errorf("reserved range [%d, %d] overlaps extension range [%d, %d]",
+					reserved.from, reserved.to, extension.from, extension.to))
+			}
+		}
+	}
 	for _, x := range m.Fields {
-		if m.IsReservedField(x.FieldNumber) {
+		if m.reservedNames.Has(x.Name) {
+			errs = append(errs, fmt.Errorf("field %q uses reserved name", x.Name))
+		}
+		// the runtime rejects these tags at first Marshal/Unmarshal,
+		// so reject them at generation time where the root cause is visible
+		if n := protowire.Number(x.FieldNumber); !n.IsValid() {
+			errs = append(errs, fmt.Errorf("field %q field number = %d is out of range [%d, %d]",
+				x.Name, x.FieldNumber, protowire.MinValidNumber, protowire.MaxValidNumber))
+		} else if n >= protowire.FirstReservedNumber && n <= protowire.LastReservedNumber {
+			errs = append(errs, fmt.Errorf("field %q field number = %d is reserved for the protobuf implementation",
+				x.Name, x.FieldNumber))
+		} else if m.reserved.In(x.FieldNumber) {
 			errs = append(errs, fmt.Errorf("field %q field number = %d is reserved", x.Name, x.FieldNumber))
+		} else if m.extensionRanges.In(x.FieldNumber) {
+			errs = append(errs, fmt.Errorf("field %q field number = %d is in an extension range", x.Name, x.FieldNumber))
 		} else if exists[x.FieldNumber] {
 			errs = append(errs, fmt.Errorf("field %q field number = %d is duplicated", x.Name, x.FieldNumber))
 		}

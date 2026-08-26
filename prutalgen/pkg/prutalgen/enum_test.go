@@ -85,6 +85,12 @@ func TestEnum_Verify(t *testing.T) {
 	e.reserved = nil
 	assert.NoError(t, p.verify())
 
+	// reserved name
+	e.reservedNames = append(e.reservedNames, "ev1")
+	assert.ErrorContains(t, p.verify(), `"ev1" uses reserved name`)
+	e.reservedNames = nil
+	assert.NoError(t, p.verify())
+
 	// duplicated
 	e.Fields = append(e.Fields, e.Fields[0])
 	assert.ErrorContains(t, p.verify(), "1 is duplicated")

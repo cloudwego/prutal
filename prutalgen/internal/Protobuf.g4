@@ -133,11 +133,18 @@ ranges
     ;
 
 oneRange
-    : intLit (TO ( intLit | MAX))?
+    : MINUS? intLit (TO (MINUS? intLit | MAX))?
     ;
 
 reservedFieldNames
     : strLit (COMMA strLit)*
+    | reservedIdentifier (COMMA reservedIdentifier)*
+    ;
+
+reservedIdentifier
+    : ident
+    | INF
+    | NAN
     ;
 
 
@@ -309,6 +316,8 @@ boolLit
 
 floatLit
     : FLOAT_LIT
+    | INF
+    | NAN
     ;
 
 // keywords
@@ -534,20 +543,26 @@ STR_LIT_SINGLE
 fragment CHAR_VALUE
     : HEX_ESCAPE
     | OCT_ESCAPE
+    | UNICODE_ESCAPE
     | CHAR_ESCAPE
     | ~[\u0000\n\\]
     ;
 
 fragment HEX_ESCAPE
-    : '\\' ('x' | 'X') HEX_DIGIT HEX_DIGIT
+    : '\\' ('x' | 'X') HEX_DIGIT HEX_DIGIT?
     ;
 
 fragment OCT_ESCAPE
-    : '\\' OCTAL_DIGIT OCTAL_DIGIT OCTAL_DIGIT
+    : '\\' OCTAL_DIGIT OCTAL_DIGIT? OCTAL_DIGIT?
+    ;
+
+fragment UNICODE_ESCAPE
+    : '\\' 'u' HEX_DIGIT HEX_DIGIT HEX_DIGIT HEX_DIGIT
+    | '\\' 'U' HEX_DIGIT HEX_DIGIT HEX_DIGIT HEX_DIGIT HEX_DIGIT HEX_DIGIT HEX_DIGIT HEX_DIGIT
     ;
 
 fragment CHAR_ESCAPE
-    : '\\' ('a' | 'b' | 'f' | 'n' | 'r' | 't' | 'v' | '\\' | '\'' | '"')
+    : '\\' ('a' | 'b' | 'f' | 'n' | 'r' | 't' | 'v' | '\\' | '\'' | '"' | '?')
     ;
 
 BOOL_LIT
@@ -555,10 +570,16 @@ BOOL_LIT
     | 'false'
     ;
 
+INF
+    : 'inf'
+    ;
+
+NAN
+    : 'nan'
+    ;
+
 FLOAT_LIT
     : (DECIMALS DOT DECIMALS? EXPONENT? | DECIMALS EXPONENT | DOT DECIMALS EXPONENT?)
-    | 'inf'
-    | 'nan'
     ;
 
 fragment EXPONENT
@@ -630,6 +651,7 @@ keywords
     | PACKAGE
     | OPTION
     | OPTIONAL
+    | REQUIRED
     | REPEATED
     | ONEOF
     | MAP

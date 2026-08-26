@@ -29,6 +29,36 @@ type testLogger struct {
 	*testing.T
 }
 
+type testFatal string
+
+type panicLogger struct{}
+
+func (panicLogger) Printf(string, ...any) {}
+
+func (panicLogger) Fatalf(format string, v ...any) {
+	panic(testFatal(fmt.Sprintf(format, v...)))
+}
+
+func expectProtoError(t *testing.T, payload, want string) {
+	t.Helper()
+	var recovered any
+	func() {
+		defer func() { recovered = recover() }()
+		x := NewLoader([]string{"."}, nil)
+		x.SetLogger(panicLogger{})
+		fn := writeFile(t, "test.proto", []byte(payload))
+		_ = x.LoadProto(fn)
+	}()
+	if recovered == nil {
+		t.Fatal("expected loader error")
+	}
+	err, ok := recovered.(testFatal)
+	if !ok {
+		panic(recovered)
+	}
+	assert.StringContains(t, string(err), want)
+}
+
 func (l testLogger) Printf(format string, v ...any) {
 	l.Helper()
 	l.Logf(format, v...)

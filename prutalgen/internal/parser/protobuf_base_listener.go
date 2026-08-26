@@ -147,6 +147,12 @@ func (s *BaseProtobufListener) EnterReservedFieldNames(ctx *ReservedFieldNamesCo
 // ExitReservedFieldNames is called when production reservedFieldNames is exited.
 func (s *BaseProtobufListener) ExitReservedFieldNames(ctx *ReservedFieldNamesContext) {}
 
+// EnterReservedIdentifier is called when production reservedIdentifier is entered.
+func (s *BaseProtobufListener) EnterReservedIdentifier(ctx *ReservedIdentifierContext) {}
+
+// ExitReservedIdentifier is called when production reservedIdentifier is exited.
+func (s *BaseProtobufListener) ExitReservedIdentifier(ctx *ReservedIdentifierContext) {}
+
 // EnterTopLevelDef is called when production topLevelDef is entered.
 func (s *BaseProtobufListener) EnterTopLevelDef(ctx *TopLevelDefContext) {}
 

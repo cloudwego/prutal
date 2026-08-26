@@ -71,6 +71,9 @@ type ProtobufListener interface {
 	// EnterReservedFieldNames is called when entering the reservedFieldNames production.
 	EnterReservedFieldNames(c *ReservedFieldNamesContext)
 
+	// EnterReservedIdentifier is called when entering the reservedIdentifier production.
+	EnterReservedIdentifier(c *ReservedIdentifierContext)
+
 	// EnterTopLevelDef is called when entering the topLevelDef production.
 	EnterTopLevelDef(c *TopLevelDefContext)
 
@@ -229,6 +232,9 @@ type ProtobufListener interface {
 
 	// ExitReservedFieldNames is called when exiting the reservedFieldNames production.
 	ExitReservedFieldNames(c *ReservedFieldNamesContext)
+
+	// ExitReservedIdentifier is called when exiting the reservedIdentifier production.
+	ExitReservedIdentifier(c *ReservedIdentifierContext)
 
 	// ExitTopLevelDef is called when exiting the topLevelDef production.
 	ExitTopLevelDef(c *TopLevelDefContext)

@@ -37,7 +37,8 @@ type Enum struct {
 	Fields  []*EnumField
 	Options Options
 
-	reserved reservedRanges
+	reserved      reservedRanges
+	reservedNames reservedNames
 
 	Msg   *Message // for embedded enum only
 	Proto *Proto
@@ -145,6 +146,9 @@ func (e *Enum) verify() error {
 	foundAlias := false
 	numbers := map[int32]*EnumField{}
 	for _, f := range e.Fields {
+		if e.reservedNames.Has(f.Name) {
+			errs = append(errs, fmt.Errorf("%q uses reserved name", f.Name))
+		}
 		if e.IsReservedField(f.Value) {
 			errs = append(errs, fmt.Errorf("%q = %d is reserved", f.Name, f.Value))
 		}

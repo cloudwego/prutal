@@ -17,6 +17,7 @@
 package prutalgen
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/cloudwego/prutal/internal/testutils/assert"
@@ -74,11 +75,38 @@ func TestMessage_Verify(t *testing.T) {
 	m.reserved = nil
 	assert.NoError(t, p.verify())
 
+	// reserved name
+	m.reservedNames = append(m.reservedNames, "testfield")
+	assert.ErrorContains(t, p.verify(), `"testfield" uses reserved name`)
+	m.reservedNames = nil
+	assert.NoError(t, p.verify())
+
 	// duplicated
 	m.Fields = append(m.Fields, &Field{Name: "testfield2", FieldNumber: 1})
 	assert.ErrorContains(t, p.verify(), "field number = 1 is duplicated")
 	m.Fields = nil
 	assert.NoError(t, p.verify())
+
+	// out of range: zero, negative, above 2^29-1
+	m.Fields = []*Field{{Name: "testfield", FieldNumber: 0}}
+	assert.ErrorContains(t, p.verify(), "field number = 0 is out of range")
+	m.Fields = []*Field{{Name: "testfield", FieldNumber: -1}}
+	assert.ErrorContains(t, p.verify(), "field number = -1 is out of range")
+	m.Fields = []*Field{{Name: "testfield", FieldNumber: 1 << 29}}
+	assert.ErrorContains(t, p.verify(), "field number = 536870912 is out of range")
+	m.Fields = []*Field{{Name: "testfield", FieldNumber: 1<<29 - 1}}
+	assert.NoError(t, p.verify())
+
+	// reserved for the protobuf implementation
+	m.Fields = []*Field{{Name: "testfield", FieldNumber: 19000}}
+	err := p.verify()
+	assert.ErrorContains(t, err, "field number = 19000 is reserved for the protobuf implementation")
+	assert.Equal(t, 1, strings.Count(err.Error(), "field number = 19000"))
+	m.Fields = []*Field{{Name: "testfield", FieldNumber: 19999}}
+	assert.ErrorContains(t, p.verify(), "field number = 19999 is reserved for the protobuf implementation")
+	m.Fields = []*Field{{Name: "testfield", FieldNumber: 18999}, {Name: "testfield2", FieldNumber: 20000}}
+	assert.NoError(t, p.verify())
+	m.Fields = nil
 
 	// nested msg case
 	mm := &Message{
