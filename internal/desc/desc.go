@@ -64,6 +64,10 @@ func GetOrParse(rv reflect.Value) (*StructDesc, error) {
 		return ret, nil
 	}
 
+	parsed := false
+	startParseScope()
+	defer finishParseScope(&parsed)
+
 	t, err := parseType(rt)
 	if err != nil {
 		return nil, err
@@ -76,6 +80,7 @@ func GetOrParse(rv reflect.Value) (*StructDesc, error) {
 		return nil, err
 	}
 	cache.Set(typ, s)
+	parsed = true
 	return s, nil
 }
 
@@ -125,7 +130,7 @@ func (p *StructDesc) FinalizeFields() error {
 	for _, f := range p.Fields {
 		if err := f.finalizeField(); err != nil {
 			p.finalized = false
-			return err
+			return fmt.Errorf("finalize field %q err: %w", f.Name, err)
 		}
 		for _, t := range []*Type{f.T, f.T.K, f.T.V} {
 			if t == nil {
@@ -133,7 +138,7 @@ func (p *StructDesc) FinalizeFields() error {
 			}
 			if err := t.finalizeType(); err != nil {
 				p.finalized = false
-				return err
+				return fmt.Errorf("finalize field %q err: %w", f.Name, err)
 			}
 		}
 	}
@@ -210,7 +215,9 @@ func (f *FieldDesc) IsOneof() bool {
 func (f *FieldDesc) parse(rt reflect.Type) (err error) {
 	tag := f.Tag.Get("protobuf")
 	if tag == "" {
-		panic("not protobuf field")
+		// only reachable via oneof wrapper fields;
+		// parseStruct skips regular fields without the tag
+		return errors.New("missing protobuf tag")
 	}
 	if err = f.parseStructTag(tag); err != nil {
 		return
@@ -225,11 +232,11 @@ func (f *FieldDesc) finalizeField() (err error) {
 	f.IsMap = t.Kind == reflect.Map
 
 	if f.IsMap {
-		f.KeyType, err = parseKVTag(f.Tag.Get("protobuf_key"))
+		f.KeyType, err = parseKVTag(f.Tag.Get("protobuf_key"), 1, false)
 		if err != nil {
 			return
 		}
-		f.ValType, err = parseKVTag(f.Tag.Get("protobuf_val"))
+		f.ValType, err = parseKVTag(f.Tag.Get("protobuf_val"), 2, true)
 		if err != nil {
 			return
 		}
@@ -261,6 +268,18 @@ func (f *FieldDesc) finalizeField() (err error) {
 
 func (f *FieldDesc) checkTypeMatch() error {
 	t := f.T
+	if f.IsOneof() {
+		// oneof fields are never repeated or map in protobuf; the decoder
+		// also allocates a fresh wrapper per wire record, so a slice or map
+		// here would silently keep only the last record on decode
+		if f.Repeated || t.IsSlice || t.Kind == reflect.Map {
+			return fmt.Errorf("unsupported repeated or map field in oneof %s", t.T)
+		}
+		if t.IsPointer && t.V.Kind != reflect.Struct {
+			return fmt.Errorf("unsupported oneof pointer to non-message type %s", t.T)
+		}
+	}
+
 	if f.Packed {
 		if !f.Repeated {
 			return errors.New("packed field is not repeated field")
@@ -287,6 +306,12 @@ func (f *FieldDesc) checkTypeMatch() error {
 			el := t.V
 			if el.IsPointer {
 				el = el.V
+				// pointer elements are only valid for message (struct) types:
+				// scalar pointer elements would be routed to the flat-stride
+				// list coders, corrupting the output
+				if el.Kind != reflect.Struct {
+					return fmt.Errorf("unsupported repeated pointer to non-message type %s", t.T)
+				}
 			}
 			if el.IsSlice || el.Kind == reflect.Map {
 				return fmt.Errorf("unsupported nested repeated field type %s", t.T)
@@ -294,12 +319,39 @@ func (f *FieldDesc) checkTypeMatch() error {
 		}
 	}
 
+	if !f.Repeated {
+		// converse of the check above: a slice or map (but not []byte, which is
+		// the scalar bytes type) without `rep` would take an unsupported encode
+		// path and read the container header as a value, producing corrupt output
+		et := t
+		if et.IsPointer {
+			et = et.V
+		}
+		if et.IsSlice || et.Kind == reflect.Map {
+			return errors.New("slice or map field must be repeated")
+		}
+	}
+
 	if err := IsFieldTypeMatchReflectKind(f.TagType, t.RealKind()); err != nil {
 		return err
 	}
 	if t.Kind == reflect.Map {
-		if !f.Repeated {
-			return errors.New("must be repeated field for map")
+		// non-repeated maps were already rejected above
+		// pointer map values are only valid for message (struct) types:
+		// scalar pointer values would be read as flat values by the value
+		// coder, leaking pointer bits (same class as the slice check above)
+		if t.V.IsPointer && t.V.V.Kind != reflect.Struct {
+			return fmt.Errorf("unsupported map value pointer to non-message type %s", t.T)
+		}
+		// slice/map values would flatten to a scalar RealKind, pass the
+		// match below and then be mis-encoded by a flat value coder
+		if t.V.IsSlice || t.V.Kind == reflect.Map {
+			return fmt.Errorf("unsupported map value type %s", t.T)
+		}
+		// pointer keys flatten to a scalar RealKind and would leak the key
+		// pointer bits on encode
+		if t.K.IsPointer {
+			return fmt.Errorf("unsupported map key pointer type %s", t.T)
 		}
 		if err := IsFieldKeyTypeMatchReflectKind(f.KeyType, t.K.RealKind()); err != nil {
 			return err
@@ -313,12 +365,40 @@ func (f *FieldDesc) checkTypeMatch() error {
 
 var cachedStructs = map[reflect.Type]*StructDesc{}
 
+var (
+	// Entries inserted by the GetOrParse call currently holding parsemu. They
+	// are rolled back as a unit if that call fails or panics.
+	parseScopeTypes   map[reflect.Type]struct{}
+	parseScopeStructs map[reflect.Type]struct{}
+)
+
+func startParseScope() {
+	parseScopeTypes = make(map[reflect.Type]struct{})
+	parseScopeStructs = make(map[reflect.Type]struct{})
+}
+
+func finishParseScope(parsed *bool) {
+	if !*parsed {
+		for rt := range parseScopeTypes {
+			delete(cachedTypes, rt)
+		}
+		for rt := range parseScopeStructs {
+			delete(cachedStructs, rt)
+		}
+	}
+	parseScopeTypes = nil
+	parseScopeStructs = nil
+}
+
 func parseStruct(rt reflect.Type) (s *StructDesc, err error) {
 	if s = cachedStructs[rt]; s != nil {
 		return s, nil
 	}
 	s = &StructDesc{Empty: reflect.New(rt).UnsafePointer()}
 	cachedStructs[rt] = s // fix cyclic refs
+	if parseScopeStructs != nil {
+		parseScopeStructs[rt] = struct{}{}
+	}
 	defer func() {
 		if err != nil {
 			delete(cachedStructs, rt)
@@ -344,24 +424,53 @@ func parseStruct(rt reflect.Type) (s *StructDesc, err error) {
 	}
 
 	if len(oneofs) > 0 {
-		for _, v := range searchOneofWrappers(rt) {
-			rt := reflect.TypeOf(v)
-			for _, o := range oneofs {
-				if !rt.Implements(o.Type) {
+		// Type.Implements below panics on a non-interface type.
+		for _, o := range oneofs {
+			if o.Type.Kind() != reflect.Interface {
+				return nil, fmt.Errorf("parse field %q err: oneof field is not an interface: %s", o.Name, o.Type)
+			}
+			if o.Type.NumMethod() == 0 {
+				return nil, fmt.Errorf("parse field %q err: oneof field is an empty interface", o.Name)
+			}
+		}
+
+		wrappers := searchOneofWrappers(rt)
+		matched := make([]bool, len(oneofs))
+		for _, v := range wrappers {
+			wt := reflect.TypeOf(v)
+			if wt == nil || wt.Kind() != reflect.Pointer || wt.Elem().Kind() != reflect.Struct {
+				return nil, fmt.Errorf("oneof wrapper %T is not a pointer to struct", v)
+			}
+			st := wt.Elem() // Pointer -> Struct
+			match := -1
+			for i, o := range oneofs {
+				if !wt.Implements(o.Type) {
 					continue
 				}
-				// Pointer -> Struct
-				rt = rt.Elem()
-				if rt.NumField() != 1 { // The struct must contains exactly one field
-					return nil, fmt.Errorf("parse field %q oneof %q err: field number != 1", o.Name, rt.String())
+				if match >= 0 {
+					return nil, fmt.Errorf("oneof wrapper %s implements multiple oneof interfaces", wt)
 				}
-				field := rt.Field(0)
-				f := &FieldDesc{Name: o.Name, Offset: o.Offset, Tag: field.Tag, OneofType: reflect.PointerTo(rt)}
-				f.IfaceTab = hack.IfaceTab(o.Type, rt)
-				if err = f.parse(field.Type); err != nil {
-					return nil, fmt.Errorf("parse field %q oneof %q err: %w", o.Name, rt.String(), err)
-				}
-				fields = append(fields, f)
+				match = i
+			}
+			if match < 0 {
+				continue
+			}
+			o := oneofs[match]
+			if st.NumField() != 1 { // The struct must contain exactly one field.
+				return nil, fmt.Errorf("parse field %q oneof %q err: field number != 1", o.Name, st.String())
+			}
+			field := st.Field(0)
+			f := &FieldDesc{Name: o.Name, Offset: o.Offset, Tag: field.Tag, OneofType: wt}
+			f.IfaceTab = hack.IfaceTab(o.Type, st)
+			if err = f.parse(field.Type); err != nil {
+				return nil, fmt.Errorf("parse field %q oneof %q err: %w", o.Name, st.String(), err)
+			}
+			fields = append(fields, f)
+			matched[match] = true
+		}
+		for i, ok := range matched {
+			if !ok {
+				return nil, fmt.Errorf("parse field %q err: oneof has no wrappers", oneofs[i].Name)
 			}
 		}
 	}

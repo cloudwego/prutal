@@ -390,3 +390,469 @@ func TestOneOf(t *testing.T) {
 	assert.Equal(t, "OneOfField1", f.Name)
 	assert.Equal(t, unsafe.Offsetof((*TestOneofMessage)(nil).OneOfField1), f.Offset)
 }
+
+type legacyOneofMessage struct {
+	One legacyOneof `protobuf_oneof:"one"`
+}
+
+type legacyOneof interface {
+	isLegacyOneof()
+}
+
+type legacyOneofInt32 struct {
+	Value int32 `protobuf:"varint,1,opt"`
+}
+
+func (*legacyOneofInt32) isLegacyOneof() {}
+
+func (*legacyOneofMessage) XXX_OneofFuncs() (func(), func(), func(), []any) {
+	return nil, nil, nil, []any{(*legacyOneofInt32)(nil)}
+}
+
+func TestLegacyOneofFuncs(t *testing.T) {
+	sd, err := GetOrParse(reflect.ValueOf(&legacyOneofMessage{}))
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(sd.Fields))
+	assert.True(t, sd.Fields[0].IsOneof())
+	assert.DeepEqual(t, reflect.TypeOf(&legacyOneofInt32{}), sd.Fields[0].OneofType)
+}
+
+type invalidCyclicMessage struct {
+	Child *invalidCyclicChild `protobuf:"bytes,1,opt"`
+	Bad   int32               `protobuf:"varint,0,opt"`
+}
+
+type invalidCyclicChild struct {
+	Root *invalidCyclicMessage `protobuf:"bytes,1,opt"`
+}
+
+type sharedDescriptorRoot struct {
+	Child *sharedDescriptorChild `protobuf:"bytes,1,opt"`
+}
+
+type sharedDescriptorChild struct {
+	Root *sharedDescriptorRoot `protobuf:"bytes,1,opt"`
+}
+
+type sharedDescriptorWrapper struct {
+	Shared *sharedDescriptorRoot `protobuf:"bytes,1,opt"`
+}
+
+type panickingCyclicMessage struct {
+	Child *panickingCyclicChild `protobuf:"bytes,1,opt"`
+	One   panickingCyclicOneof  `protobuf_oneof:"one"`
+}
+
+type panickingCyclicChild struct {
+	Root *panickingCyclicMessage `protobuf:"bytes,1,opt"`
+}
+
+type panickingCyclicOneof interface {
+	isPanickingCyclicOneof()
+}
+
+type invalidOneofScalarPointerMessage struct {
+	One invalidOneofScalarPointer `protobuf_oneof:"one"`
+}
+
+type invalidOneofScalarPointer interface {
+	isInvalidOneofScalarPointerMessage()
+}
+
+type invalidOneofScalarPointerWrapper struct {
+	Value *int32 `protobuf:"varint,1,opt"`
+}
+
+func (*invalidOneofScalarPointerMessage) XXX_OneofWrappers() []any {
+	return []any{(*invalidOneofScalarPointerWrapper)(nil)}
+}
+
+func (*invalidOneofScalarPointerWrapper) isInvalidOneofScalarPointerMessage() {}
+
+func (*panickingCyclicMessage) XXX_OneofWrappers() []any {
+	// panics after the cyclic fields above have been parsed and cached,
+	// so the parse scope must roll them back
+	panic("XXX_OneofWrappers panic")
+}
+
+type invalidOneofNoTagMessage struct {
+	One invalidOneofNoTag `protobuf_oneof:"one"`
+}
+
+type invalidOneofNoTag interface {
+	isInvalidOneofNoTagMessage()
+}
+
+// the wrapper field is missing the protobuf tag
+type invalidOneofNoTagWrapper struct {
+	Value int32
+}
+
+func (*invalidOneofNoTagMessage) XXX_OneofWrappers() []any {
+	return []any{(*invalidOneofNoTagWrapper)(nil)}
+}
+
+func (*invalidOneofNoTagWrapper) isInvalidOneofNoTagMessage() {}
+
+type invalidOneofRepeatedMessage struct {
+	One invalidOneofRepeated `protobuf_oneof:"one"`
+}
+
+type invalidOneofRepeated interface {
+	isInvalidOneofRepeatedMessage()
+}
+
+type invalidOneofRepeatedWrapper struct {
+	Value []int32 `protobuf:"varint,1,rep"`
+}
+
+func (*invalidOneofRepeatedMessage) XXX_OneofWrappers() []any {
+	return []any{(*invalidOneofRepeatedWrapper)(nil)}
+}
+
+func (*invalidOneofRepeatedWrapper) isInvalidOneofRepeatedMessage() {}
+
+type invalidOneofMapMessage struct {
+	One invalidOneofMap `protobuf_oneof:"one"`
+}
+
+type invalidOneofMap interface {
+	isInvalidOneofMapMessage()
+}
+
+type invalidOneofMapWrapper struct {
+	Value map[string]int32 `protobuf:"bytes,1,rep" protobuf_key:"bytes,1,opt" protobuf_val:"varint,2,opt"`
+}
+
+func (*invalidOneofMapMessage) XXX_OneofWrappers() []any {
+	return []any{(*invalidOneofMapWrapper)(nil)}
+}
+
+func (*invalidOneofMapWrapper) isInvalidOneofMapMessage() {}
+
+type invalidOneofNotIfaceMessage struct {
+	One int32 `protobuf_oneof:"one"`
+}
+
+func (*invalidOneofNotIfaceMessage) XXX_OneofWrappers() []any {
+	return []any{(*invalidOneofScalarPointerWrapper)(nil)}
+}
+
+type invalidOneofNoWrappersMessage struct {
+	One invalidOneofNoWrappers `protobuf_oneof:"one"`
+}
+
+type invalidOneofNoWrappers interface {
+	isInvalidOneofNoWrappers()
+}
+
+func (*invalidOneofNoWrappersMessage) XXX_OneofWrappers() int {
+	return 1
+}
+
+type invalidMapKeyEnum int32
+
+type validMapValueEnum int32
+
+type invalidOneofBadWrapperMessage struct {
+	One invalidOneofBadWrapper `protobuf_oneof:"one"`
+}
+
+type invalidOneofBadWrapper interface {
+	isInvalidOneofBadWrapper()
+}
+
+func (*invalidOneofBadWrapperMessage) XXX_OneofWrappers() []any {
+	return []any{42}
+}
+
+// a single wrapper implementing two oneof interfaces must error, not panic
+type invalidOneofDoubleMatchMessage struct {
+	A invalidOneofDoubleMatchA `protobuf_oneof:"a"`
+	B invalidOneofDoubleMatchB `protobuf_oneof:"b"`
+}
+
+type invalidOneofDoubleMatchA interface {
+	isInvalidOneofDoubleMatchA()
+}
+
+type invalidOneofDoubleMatchB interface {
+	isInvalidOneofDoubleMatchB()
+}
+
+func (*invalidOneofDoubleMatchMessage) XXX_OneofWrappers() []any {
+	return []any{(*invalidOneofDoubleMatchWrapper)(nil)}
+}
+
+type invalidOneofDoubleMatchWrapper struct {
+	Value int32 `protobuf:"varint,1,opt"`
+}
+
+func (*invalidOneofDoubleMatchWrapper) isInvalidOneofDoubleMatchA() {}
+
+func (*invalidOneofDoubleMatchWrapper) isInvalidOneofDoubleMatchB() {}
+
+type invalidOneofEmptyInterfaceMessage struct {
+	One any `protobuf_oneof:"one"`
+}
+
+type invalidOneofEmptyInterfaceWrapper struct {
+	Value int32 `protobuf:"varint,1,opt"`
+}
+
+func (*invalidOneofEmptyInterfaceMessage) XXX_OneofWrappers() []any {
+	return []any{(*invalidOneofEmptyInterfaceWrapper)(nil)}
+}
+
+type invalidOneofWrapperMethodArityMessage struct {
+	One invalidOneofWrapperMethodArity `protobuf_oneof:"one"`
+}
+
+type invalidOneofWrapperMethodArity interface {
+	isInvalidOneofWrapperMethodArity()
+}
+
+func (*invalidOneofWrapperMethodArityMessage) XXX_OneofWrappers(int) []any {
+	return nil
+}
+
+type invalidOneofProtoReflectArityMessage struct {
+	One invalidOneofProtoReflectArity `protobuf_oneof:"one"`
+}
+
+type invalidOneofProtoReflectArity interface {
+	isInvalidOneofProtoReflectArity()
+}
+
+func (*invalidOneofProtoReflectArityMessage) ProtoReflect(int) any {
+	return nil
+}
+
+type invalidOneofProtoReflectResultMessage struct {
+	One invalidOneofProtoReflectResult `protobuf_oneof:"one"`
+}
+
+type invalidOneofProtoReflectResult interface {
+	isInvalidOneofProtoReflectResult()
+}
+
+func (*invalidOneofProtoReflectResultMessage) ProtoReflect() any {
+	return struct{ OneofWrappers int }{}
+}
+
+type nilPanickingCyclicMessage struct {
+	Child *nilPanickingCyclicChild `protobuf:"bytes,1,opt"`
+	One   nilPanickingCyclicOneof  `protobuf_oneof:"one"`
+}
+
+type nilPanickingCyclicChild struct {
+	Root *nilPanickingCyclicMessage `protobuf:"bytes,1,opt"`
+}
+
+type nilPanickingCyclicOneof interface {
+	isNilPanickingCyclicOneof()
+}
+
+func (*nilPanickingCyclicMessage) XXX_OneofWrappers() []any {
+	panic(nil)
+}
+
+func recoverPanic(f func()) (recovered bool) {
+	returned := false
+	defer func() {
+		if !returned {
+			_ = recover()
+			recovered = true
+		}
+	}()
+	f()
+	returned = true
+	return false
+}
+
+func TestGetOrParseCyclicErrorDoesNotPoisonCache(t *testing.T) {
+	_, err := GetOrParse(reflect.ValueOf(&invalidCyclicMessage{}))
+	assert.True(t, err != nil, "invalid cyclic root")
+
+	// The successfully parsed child retains a reference to the failed parent.
+	// It must not be reusable until the parent has parsed successfully.
+	_, err = GetOrParse(reflect.ValueOf(&invalidCyclicChild{}))
+	assert.True(t, err != nil, "invalid cyclic child")
+}
+
+func TestGetOrParseRecoveredPanicDoesNotPoisonCache(t *testing.T) {
+	if !recoverPanic(func() {
+		_, _ = GetOrParse(reflect.ValueOf(&panickingCyclicMessage{}))
+	}) {
+		t.Fatal("expected the first parse to panic")
+	}
+	if !recoverPanic(func() {
+		_, _ = GetOrParse(reflect.ValueOf(&panickingCyclicChild{}))
+	}) {
+		t.Fatal("expected the second parse to panic")
+	}
+}
+
+func TestGetOrParseRecoveredNilPanicDoesNotPoisonCache(t *testing.T) {
+	if !recoverPanic(func() {
+		_, _ = GetOrParse(reflect.ValueOf(&nilPanickingCyclicMessage{}))
+	}) {
+		t.Fatal("expected the first parse to panic")
+	}
+	if !recoverPanic(func() {
+		_, _ = GetOrParse(reflect.ValueOf(&nilPanickingCyclicChild{}))
+	}) {
+		t.Fatal("expected the second parse to panic")
+	}
+}
+
+func TestParseErrorKeepsSuccessfulDescriptors(t *testing.T) {
+	root, err := GetOrParse(reflect.ValueOf(&sharedDescriptorRoot{}))
+	assert.NoError(t, err)
+
+	_, err = GetOrParse(reflect.ValueOf(&invalidCyclicMessage{}))
+	assert.True(t, err != nil, "invalid cyclic root")
+
+	wrapper, err := GetOrParse(reflect.ValueOf(&sharedDescriptorWrapper{}))
+	assert.NoError(t, err)
+	assert.Equal(t, root, wrapper.GetField(1).T.V.S)
+}
+
+// Hand-written structs whose tag/type combination would be mis-encoded
+// (pointer bits leaked, slice headers read as scalars, panics on invalid
+// field numbers) must be rejected by GetOrParse.
+func TestGetOrParseReject(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		typ  any
+	}{
+		{"field number 0", &struct {
+			F int32 `protobuf:"varint,0,opt"`
+		}{}},
+		{"field number missing", &struct {
+			F int32 `protobuf:"varint,opt"`
+		}{}},
+		{"field number 2^29", &struct {
+			F int32 `protobuf:"varint,536870912,opt"`
+		}{}},
+		{"field number 2^31 wraps int32", &struct {
+			F int32 `protobuf:"varint,2147483648,opt"`
+		}{}},
+		{"reserved field number 19000", &struct {
+			F int32 `protobuf:"varint,19000,opt"`
+		}{}},
+		{"reserved field number 19999", &struct {
+			F int32 `protobuf:"varint,19999,opt"`
+		}{}},
+		{"slice field without rep", &struct {
+			F []int32 `protobuf:"varint,1,opt"`
+		}{}},
+		{"pointer to map field", &struct {
+			F *map[string]int32 `protobuf:"bytes,1,opt"`
+		}{}},
+		{"oneof pointer to scalar", &invalidOneofScalarPointerMessage{}},
+		{"oneof wrapper missing protobuf tag", &invalidOneofNoTagMessage{}},
+		{"oneof repeated field", &invalidOneofRepeatedMessage{}},
+		{"oneof map field", &invalidOneofMapMessage{}},
+		{"oneof field not an interface", &invalidOneofNotIfaceMessage{}},
+		{"oneof field not an interface without wrappers", &struct {
+			One int32 `protobuf_oneof:"one"`
+		}{}},
+		{"oneof has no wrappers", &invalidOneofNoWrappersMessage{}},
+		{"oneof wrapper not pointer to struct", &invalidOneofBadWrapperMessage{}},
+		{"oneof wrapper matching two oneofs", &invalidOneofDoubleMatchMessage{}},
+		{"oneof empty interface", &invalidOneofEmptyInterfaceMessage{}},
+		{"oneof wrapper method has arguments", &invalidOneofWrapperMethodArityMessage{}},
+		{"oneof ProtoReflect method has arguments", &invalidOneofProtoReflectArityMessage{}},
+		{"oneof ProtoReflect result has invalid wrappers", &invalidOneofProtoReflectResultMessage{}},
+		{"duplicated field number in tag", &struct {
+			F int32 `protobuf:"varint,1,7,opt"`
+		}{}},
+		{"repeated pointer to scalar", &struct {
+			F []*int32 `protobuf:"varint,1,rep"`
+		}{}},
+		{"map value pointer to scalar", &struct {
+			F map[string]*int32 `protobuf:"bytes,1,rep" protobuf_key:"bytes,1,opt" protobuf_val:"varint,2,opt"`
+		}{}},
+		{"map value slice", &struct {
+			F map[string][]int32 `protobuf:"bytes,1,rep" protobuf_key:"bytes,1,opt" protobuf_val:"varint,2,opt"`
+		}{}},
+		{"map key pointer", &struct {
+			F map[*int32]string `protobuf:"bytes,1,rep" protobuf_key:"varint,1,opt" protobuf_val:"bytes,2,opt"`
+		}{}},
+		{"float32 map key", &struct {
+			F map[float32]string `protobuf:"bytes,1,rep" protobuf_key:"fixed32,1,opt" protobuf_val:"bytes,2,opt"`
+		}{}},
+		{"float64 map key", &struct {
+			F map[float64]string `protobuf:"bytes,1,rep" protobuf_key:"fixed64,1,opt" protobuf_val:"bytes,2,opt"`
+		}{}},
+		{"map key field number", &struct {
+			F map[string]int32 `protobuf:"bytes,1,rep" protobuf_key:"bytes,2,opt" protobuf_val:"varint,2,opt"`
+		}{}},
+		{"map value field number", &struct {
+			F map[string]int32 `protobuf:"bytes,1,rep" protobuf_key:"bytes,1,opt" protobuf_val:"varint,1,opt"`
+		}{}},
+		{"map key missing field number", &struct {
+			F map[string]int32 `protobuf:"bytes,1,rep" protobuf_key:"bytes,opt" protobuf_val:"varint,2,opt"`
+		}{}},
+		{"enum map key", &struct {
+			F map[invalidMapKeyEnum]int32 `protobuf:"bytes,1,rep" protobuf_key:"varint,1,opt,enum=test.Enum" protobuf_val:"varint,2,opt"`
+		}{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := GetOrParse(reflect.ValueOf(tc.typ))
+			assert.True(t, err != nil, tc.name)
+		})
+	}
+
+	// valid shapes that must keep passing validation
+	for _, tc := range []struct {
+		name string
+		typ  any
+	}{
+		{"optional bytes", &struct {
+			F []byte `protobuf:"bytes,1,opt"`
+		}{}},
+		{"field number before reserved range", &struct {
+			F int32 `protobuf:"varint,18999,opt"`
+		}{}},
+		{"field number after reserved range", &struct {
+			F int32 `protobuf:"varint,20000,opt"`
+		}{}},
+		{"maximum field number", &struct {
+			F int32 `protobuf:"varint,536870911,opt"`
+		}{}},
+		{"repeated bytes", &struct {
+			F [][]byte `protobuf:"bytes,1,rep"`
+		}{}},
+		{"repeated pointer to message", &struct {
+			F []*NestedMessage `protobuf:"bytes,1,rep"`
+		}{}},
+		{"map to message", &struct {
+			F map[string]*NestedMessage `protobuf:"bytes,1,rep" protobuf_key:"bytes,1,opt" protobuf_val:"bytes,2,opt"`
+		}{}},
+		{"map to bytes", &struct {
+			F map[string][]byte `protobuf:"bytes,1,rep" protobuf_key:"bytes,1,opt" protobuf_val:"bytes,2,opt"`
+		}{}},
+		{"map to enum", &struct {
+			F map[string]validMapValueEnum `protobuf:"bytes,1,rep" protobuf_key:"bytes,1,opt" protobuf_val:"varint,2,opt,enum=test.Enum"`
+		}{}},
+		{"oneof pointer to message", &TestOneofMessage{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := GetOrParse(reflect.ValueOf(tc.typ))
+			assert.NoError(t, err)
+		})
+	}
+}
+
+// A proto2 default is serialized verbatim as the trailing tag element and may
+// contain commas (e.g. [default = "a,1"]); the digit run after the comma must
+// not be parsed as a field number.
+func TestParseStructTagDefaultWithComma(t *testing.T) {
+	d, err := GetOrParse(reflect.ValueOf(&struct {
+		F *string `protobuf:"bytes,3,opt,name=f,def=a,1"`
+	}{}))
+	assert.NoError(t, err)
+	assert.True(t, d.GetField(3) != nil, "field must keep number 3")
+}

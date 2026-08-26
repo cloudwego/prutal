@@ -22,19 +22,37 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/cloudwego/prutal/internal/protowire"
 	"github.com/cloudwego/prutal/internal/wire"
 )
 
 var errGroupNotSupported = errors.New("group encoding not supported")
 
+// Field number limits defined by the protobuf spec,
+// sourced from internal/protowire to keep a single authority in the repo.
+const (
+	// maxFieldNumber is the maximum valid protobuf field number (2^29 - 1).
+	maxFieldNumber = uint64(protowire.MaxValidNumber)
+
+	// Field numbers in this range are reserved by the protobuf implementation.
+	minReservedFieldNumber = uint64(protowire.FirstReservedNumber)
+	maxReservedFieldNumber = uint64(protowire.LastReservedNumber)
+)
+
 func (p *FieldDesc) parseStructTag(tag string) error {
 	ss := strings.Split(tag, ",")
+loop:
 	for _, s := range ss {
 		s = strings.TrimSpace(s)
 		if s == "" {
 			continue
 		}
 		switch {
+		case strings.HasPrefix(s, "def="):
+			// proto2 default: protobuf-go serializes it verbatim as the last
+			// tag element, so it may contain commas (e.g. def=a,1); everything
+			// after def= belongs to the default value, stop scanning
+			break loop
 		case s == "opt":
 			// not in use
 		case s == "req":
@@ -62,11 +80,24 @@ func (p *FieldDesc) parseStructTag(tag string) error {
 			if err != nil {
 				return err
 			}
+			// validate the unsigned value: int32(n) silently wraps for
+			// n >= 1<<31 and would defeat the checks below
+			if n == 0 || n > maxFieldNumber ||
+				(n >= minReservedFieldNumber && n <= maxReservedFieldNumber) {
+				return fmt.Errorf("invalid field number %d", n)
+			}
+			if p.ID != 0 {
+				// a 2nd all-digit segment would silently renumber the field
+				return fmt.Errorf("duplicated field number in tag: %d and %d", p.ID, n)
+			}
 			p.ID = int32(n)
 		}
 	}
 	if p.TagType == 0 {
 		return errors.New("unknown tag type")
+	}
+	if p.ID == 0 {
+		return errors.New("missing or invalid field number")
 	}
 	if p.Packed {
 		p.WireTag = wire.EncodeTag(p.ID, wire.TypeBytes)
@@ -76,29 +107,52 @@ func (p *FieldDesc) parseStructTag(tag string) error {
 	return nil
 }
 
-func parseKVTag(tag string) (TagType, error) {
+func parseKVTag(tag string, wantFieldNumber uint64, allowEnum bool) (TagType, error) {
 	ss := strings.Split(tag, ",")
+	var typ TagType
+	var fieldNumber uint64
+	hasFieldNumber := false
 	for _, s := range ss {
 		s = strings.TrimSpace(s)
 		if s == "" {
 			continue
 		}
-		switch { // ignore field num 1 for k, 2 for v, and opt, only need type
+		switch {
 		case s == "varint":
-			return TypeVarint, nil
+			typ = TypeVarint
 		case s == "zigzag32":
-			return TypeZigZag32, nil
+			typ = TypeZigZag32
 		case s == "zigzag64":
-			return TypeZigZag64, nil
+			typ = TypeZigZag64
 		case s == "fixed32":
-			return TypeFixed32, nil
+			typ = TypeFixed32
 		case s == "fixed64":
-			return TypeFixed64, nil
+			typ = TypeFixed64
 		case s == "bytes":
-			return TypeBytes, nil
+			typ = TypeBytes
 		case s == "group":
 			return 0, errGroupNotSupported
+		case strings.HasPrefix(s, "enum="):
+			if !allowEnum {
+				return 0, errors.New("enum is not a valid map key type")
+			}
+		case strings.Trim(s, "1234567890") == "":
+			n, err := strconv.ParseUint(s, 10, 32)
+			if err != nil {
+				return 0, err
+			}
+			if hasFieldNumber {
+				return 0, fmt.Errorf("duplicated map entry field number: %d and %d", fieldNumber, n)
+			}
+			fieldNumber = n
+			hasFieldNumber = true
 		}
 	}
-	return TypeUnknown, fmt.Errorf("failed to parse tag type: %q", tag)
+	if typ == TypeUnknown {
+		return TypeUnknown, fmt.Errorf("failed to parse tag type: %q", tag)
+	}
+	if fieldNumber != wantFieldNumber {
+		return TypeUnknown, fmt.Errorf("invalid map entry field number %d, want %d", fieldNumber, wantFieldNumber)
+	}
+	return typ, nil
 }

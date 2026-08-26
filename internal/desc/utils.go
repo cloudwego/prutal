@@ -23,7 +23,9 @@ import (
 )
 
 // IsFieldKeyTypeMatchReflectKind returns nil if t match k for map key type
-// It's same as IsFieldTypeMatchReflectKind except k can't be `[]byte` or `struct`
+// It's same as IsFieldTypeMatchReflectKind except k can't be `[]byte` or `struct`,
+// and floats are excluded for fixed32/fixed64 since protobuf forbids
+// floating-point map keys
 func IsFieldKeyTypeMatchReflectKind(t TagType, k reflect.Kind) error {
 	ok := false
 	switch t {
@@ -36,9 +38,9 @@ func IsFieldKeyTypeMatchReflectKind(t TagType, k reflect.Kind) error {
 	case TypeZigZag64:
 		ok = k == reflect.Int64
 	case TypeFixed32:
-		ok = k == reflect.Int32 || k == reflect.Uint32 || k == reflect.Float32
+		ok = k == reflect.Int32 || k == reflect.Uint32
 	case TypeFixed64:
-		ok = k == reflect.Int64 || k == reflect.Uint64 || k == reflect.Float64
+		ok = k == reflect.Int64 || k == reflect.Uint64
 	case TypeBytes:
 		ok = k == reflect.String
 	}
@@ -92,6 +94,10 @@ const (
 	//
 	// It's created by old version protobuf or gogoprotobuf
 	methodOneofWrappers = "XXX_OneofWrappers"
+
+	// methodOneofFuncs is used by older versions of protoc-gen-go. One of its
+	// return values contains the oneof wrapper types.
+	methodOneofFuncs = "XXX_OneofFuncs"
 )
 
 func searchOneofWrappers(t reflect.Type) []any {
@@ -105,16 +111,32 @@ func searchOneofWrappers(t reflect.Type) []any {
 	}
 	pt := reflect.PointerTo(t)
 	m, ok := pt.MethodByName(methodProtoReflect)
-	if ok {
+	if ok && m.Type.NumIn() == 1 && m.Type.NumOut() == 1 && !m.Type.IsVariadic() {
 		args := []reflect.Value{reflect.NewAt(t, nil)}
-		return searchFieldOneofWrappers(m.Func.Call(args)[0], 5)
+		if wrappers := searchFieldOneofWrappers(m.Func.Call(args)[0], 5); wrappers != nil {
+			return wrappers
+		}
 	}
-	m, ok = pt.MethodByName(methodOneofWrappers)
-	if ok {
-		args := []reflect.Value{reflect.NewAt(t, nil)}
-		return m.Func.Call(args)[0].Interface().([]any)
+	var wrappers []any
+	for _, name := range []string{methodOneofFuncs, methodOneofWrappers} {
+		m, ok = pt.MethodByName(name)
+		if !ok {
+			continue
+		}
+		if m.Type.NumIn() != 1 || m.Type.IsVariadic() {
+			continue
+		}
+		args := []reflect.Value{reflect.Zero(m.Type.In(0))}
+		for _, v := range m.Func.Call(args) {
+			if !v.CanInterface() {
+				continue
+			}
+			if vs, ok := v.Interface().([]any); ok {
+				wrappers = vs
+			}
+		}
 	}
-	return nil
+	return wrappers
 }
 
 func searchFieldOneofWrappers(v reflect.Value, maxdepth int) []any {
@@ -131,6 +153,9 @@ func searchFieldOneofWrappers(v reflect.Value, maxdepth int) []any {
 	}
 	oneofs := v.FieldByName(fieldOneofWrappers)
 	if oneofs.IsValid() {
+		if oneofs.Type() != reflect.TypeOf([]any(nil)) {
+			return nil
+		}
 		// same as oneofs.Interface().([]any)
 		// fix: cannot return value obtained from unexported field or method
 		ret := []any{}

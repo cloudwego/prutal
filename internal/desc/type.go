@@ -116,6 +116,9 @@ func parseType(rt reflect.Type) (t *Type, err error) {
 
 	t = &Type{}
 	cachedTypes[rt] = t // reuse result and also fix cyclic refs
+	if parseScopeTypes != nil {
+		parseScopeTypes[rt] = struct{}{}
+	}
 
 	t.T = rt
 	t.Kind = rt.Kind()
