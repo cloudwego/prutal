@@ -48,6 +48,7 @@ type CodeWriter struct {
 	buf              *bytes.Buffer
 	pkgs             map[string]string // import -> alias
 	pkgNames         map[string]string // import -> qualifier
+	pkgNameOwners    map[string]string // qualifier -> import
 	usedPackageNames map[string]bool
 
 	grouping ImportGroupingFunc
@@ -59,6 +60,7 @@ func NewCodeWriter(header, pkg string) *CodeWriter {
 		buf:              &bytes.Buffer{},
 		pkgs:             make(map[string]string),
 		pkgNames:         make(map[string]string),
+		pkgNameOwners:    make(map[string]string),
 		usedPackageNames: make(map[string]bool),
 
 		grouping: defaultGroupingFunc,
@@ -74,6 +76,9 @@ func (w *CodeWriter) Reset(header, pkg string) {
 	}
 	for k := range w.pkgNames {
 		delete(w.pkgNames, k)
+	}
+	for k := range w.pkgNameOwners {
+		delete(w.pkgNameOwners, k)
 	}
 	for k := range w.usedPackageNames {
 		delete(w.usedPackageNames, k)
@@ -92,6 +97,8 @@ func (w *CodeWriter) Reset(header, pkg string) {
 }
 
 // UsePkg records a package used by the generated source.
+// It panics if the requested qualifier belongs to another import path; use
+// UsePkgAlias when the qualifier must be allocated automatically.
 func (w *CodeWriter) UsePkg(p, preferred string) {
 	if p == "" {
 		return
@@ -103,11 +110,19 @@ func (w *CodeWriter) UsePkg(p, preferred string) {
 	if name == "" {
 		name = strs.GoSanitized(path.Base(p))
 	}
+	if name != "_" && name != "." {
+		if owner := w.pkgNameOwners[name]; owner != "" && owner != p {
+			panic(fmt.Sprintf("package qualifier %q is already used by %q; use UsePkgAlias or a unique alias", name, owner))
+		}
+	}
 	if path.Base(p) == preferred {
 		preferred = ""
 	}
 	w.pkgs[p] = preferred
 	w.pkgNames[p] = name
+	if name != "_" && name != "." {
+		w.pkgNameOwners[name] = p
+	}
 	w.usedPackageNames[name] = true
 }
 
@@ -128,6 +143,7 @@ func (w *CodeWriter) UsePkgAlias(p, preferred string) string {
 	}
 	w.pkgs[p] = name
 	w.pkgNames[p] = name
+	w.pkgNameOwners[name] = p
 	w.usedPackageNames[name] = true
 	return name
 }

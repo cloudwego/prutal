@@ -171,3 +171,35 @@ var _ = rand1.Int
 `), src)
 	typeCheckSource(t, src)
 }
+
+func TestCodeWriterRejectsLatePackageQualifierCollision(t *testing.T) {
+	w := NewCodeWriter("", "test")
+	if got := w.UsePkgAlias("math/rand", ""); got != "rand" {
+		t.Fatalf("allocated import alias = %q, want rand", got)
+	}
+	w.UsePkg("math/rand", "")
+	defer func() {
+		if recover() == nil {
+			t.Fatal("UsePkg did not reject a conflicting package qualifier")
+		}
+	}()
+	w.UsePkg("crypto/rand", "")
+}
+
+func TestCodeWriterAllowsRepeatedSpecialImports(t *testing.T) {
+	w := NewCodeWriter("", "test")
+	w.UsePkg("crypto/rand", "_")
+	w.UsePkg("math/rand", "_")
+	w.UsePkg("fmt", ".")
+	w.UsePkg("strings", ".")
+
+	sourceEqual(t, []byte(`package test
+
+import (
+	_ "crypto/rand"
+	. "fmt"
+	_ "math/rand"
+	. "strings"
+)
+`), w.Bytes())
+}
