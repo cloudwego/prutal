@@ -17,7 +17,6 @@
 package wire
 
 import (
-	"io"
 	"unsafe"
 
 	"github.com/cloudwego/prutal/internal/protowire"
@@ -107,98 +106,145 @@ func init() {
 	register(CoderBool, CoderBool, DecodeMap_Bool_Bool)
 }
 
-// TODO: map entry parsing below requires key-then-value order and both fields
-// present, and does not skip unknown fields inside an entry. The protobuf wire
-// format allows any field order, omitted key/value (defaults apply) and unknown
-// entry fields, so some spec-valid input from other encoders is rejected.
-func decodeMap_Varint(b []byte, num int32) (v uint64, n int, err error) {
-	fn, typ := ConsumeKVTag(b)
-	if fn != num {
-		return 0, 0, newFieldNumErr(fn, num)
+// decodeMapEntry decodes one map entry whose key and value are both scalar
+// (VARINT, I32 or I64) types and returns their raw wire values.
+//
+// It parses whatever the wire format allows instead of only the canonical form
+// produced by encoder_map.go: entry fields may come in any order, either of
+// them may be missing (its zero value applies), the last occurrence of a
+// repeated field wins, and unknown fields are skipped. A key or value tagged
+// with an unexpected wire type is skipped as unknown as well, matching the
+// reference implementation.
+//
+// The reflection decoder in internal/prutal scans entries the same way for the
+// key and value types that have no specialized decoder here; keep the two in
+// sync.
+func decodeMapEntry(b []byte, ktyp, vtyp Type) (k, v uint64, err error) {
+	// A canonical entry tag fits in one byte: field #1 or #2 with a scalar
+	// wire type encodes to 0x15 at most, which can never start a longer
+	// varint. Over-long tag varints are legal too, so a byte matching neither
+	// falls back to a full tag decode instead of being written off as another
+	// field.
+	ktag := byte(MapKeyFieldNum)<<3 | byte(ktyp)
+	vtag := byte(MapValFieldNum)<<3 | byte(vtyp)
+
+	// Fast path: the canonical entry every known encoder writes, key then
+	// value, both present, nothing else. This is the hot path of all the
+	// specialized map decoders, so it runs straight through, calling out only
+	// for a varint wider than two bytes; whatever does not fit is left to the
+	// general scan below, which starts over from the first byte.
+	//
+	// The scalar is dispatched on its wire type right here rather than in a
+	// helper: a helper covering all three types is too big to be inlined, and
+	// a call per entry field costs more than the decoding itself.
+	if len(b) > 0 && b[0] == ktag {
+		var kn, vn int
+		switch ktyp {
+		case TypeFixed32:
+			var u32 uint32
+			u32, kn = protowire.ConsumeFixed32(b[1:])
+			k = uint64(u32)
+		case TypeFixed64:
+			k, kn = protowire.ConsumeFixed64(b[1:])
+		default: // TypeVarint
+			if k, kn = consumeVarintFast(b[1:]); kn == 0 {
+				k, kn = protowire.ConsumeVarint(b[1:])
+			}
+		}
+		if i := 1 + kn; kn > 0 && i < len(b) && b[i] == vtag {
+			switch vtyp {
+			case TypeFixed32:
+				var u32 uint32
+				u32, vn = protowire.ConsumeFixed32(b[i+1:])
+				v = uint64(u32)
+			case TypeFixed64:
+				v, vn = protowire.ConsumeFixed64(b[i+1:])
+			default: // TypeVarint
+				if v, vn = consumeVarintFast(b[i+1:]); vn == 0 {
+					v, vn = protowire.ConsumeVarint(b[i+1:])
+				}
+			}
+			if vn > 0 && i+1+vn == len(b) {
+				return k, v, nil
+			}
+		}
+		k, v = 0, 0
 	}
-	if typ != TypeVarint {
-		return 0, 0, newTypeNotMatchErr(typ, TypeVarint)
+
+	for i := 0; i < len(b); {
+		var n int
+		switch b[i] {
+		case ktag:
+			k, n, err = consumeMapScalar(b[i+1:], ktyp)
+			n++ // entry tag byte
+
+		case vtag:
+			v, n, err = consumeMapScalar(b[i+1:], vtyp)
+			n++ // entry tag byte
+
+		default:
+			num, typ, m, terr := ConsumeMapEntryTag(b[i:])
+			if terr != nil {
+				return 0, 0, terr
+			}
+			switch {
+			case num == MapKeyFieldNum && typ == ktyp:
+				k, n, err = consumeMapScalar(b[i+m:], ktyp)
+			case num == MapValFieldNum && typ == vtyp:
+				v, n, err = consumeMapScalar(b[i+m:], vtyp)
+			default:
+				// an unknown field, or a key or value carrying an unexpected
+				// wire type: the reference implementation skips both the same way
+				if n = protowire.ConsumeFieldValue(num, typ, b[i+m:]); n < 0 {
+					err = protowire.ParseError(n)
+				}
+			}
+			n += m
+		}
+		if err != nil {
+			return 0, 0, err
+		}
+		i += n
 	}
-	b = b[1:]
-	if len(b) >= 1 && b[0] < 0x80 {
-		v = uint64(b[0])
-		n = 1
-	} else if len(b) >= 2 && b[1] < 0x80 {
-		v = uint64(b[0]&0x7f) + uint64(b[1])<<7
-		n = 2
-	} else {
+	return k, v, nil
+}
+
+// consumeVarintFast decodes a varint of at most two bytes, which is what map
+// keys and values usually are. It reports n == 0 for anything else, truncated
+// input included, leaving the caller to take the general path. Small enough to
+// be inlined; keep it so.
+func consumeVarintFast(b []byte) (v uint64, n int) {
+	if len(b) > 0 && b[0] < 0x80 {
+		return uint64(b[0]), 1
+	}
+	if len(b) > 1 && b[1] < 0x80 {
+		return uint64(b[0]&0x7f) | uint64(b[1])<<7, 2
+	}
+	return 0, 0
+}
+
+// consumeMapScalar decodes one scalar map key or value. typ has already been
+// matched against the expected key or value type by the caller, so it is
+// always one of the three scalar wire types.
+func consumeMapScalar(b []byte, typ Type) (v uint64, n int, err error) {
+	switch typ {
+	case TypeFixed32:
+		var u32 uint32
+		u32, n = protowire.ConsumeFixed32(b)
+		v = uint64(u32)
+	case TypeFixed64:
+		v, n = protowire.ConsumeFixed64(b)
+	default: // TypeVarint
 		v, n = protowire.ConsumeVarint(b)
 	}
 	if n < 0 {
 		return 0, 0, protowire.ParseError(n)
 	}
-	n++ // +1 for the tag byte
-	return
-}
-
-func decodeMap_Fixed32(b []byte, num int32) (v uint32, n int, err error) {
-	fn, typ := ConsumeKVTag(b)
-	if fn != num {
-		return 0, 0, newFieldNumErr(fn, num)
-	}
-	if typ != TypeFixed32 {
-		return 0, 0, newTypeNotMatchErr(typ, TypeFixed32)
-	}
-	b = b[1:]
-	v, n = protowire.ConsumeFixed32(b)
-	if n < 0 {
-		return 0, 0, protowire.ParseError(n)
-	}
-	n++ // +1 for the tag byte
-	return
-}
-
-func decodeMap_Fixed64(b []byte, num int32) (v uint64, n int, err error) {
-	fn, typ := ConsumeKVTag(b)
-	if fn != num {
-		return 0, 0, newFieldNumErr(fn, num)
-	}
-	if typ != TypeFixed64 {
-		return 0, 0, newTypeNotMatchErr(typ, TypeFixed64)
-	}
-	b = b[1:]
-	v, n = protowire.ConsumeFixed64(b)
-	if n < 0 {
-		return 0, 0, protowire.ParseError(n)
-	}
-	n++ // +1 for the tag byte
-	return
-}
-
-func decodeMap_Bool(b []byte, num int32) (bool, int, error) {
-	if len(b) < 2 {
-		return false, 0, io.ErrUnexpectedEOF
-	}
-	fn, typ := ConsumeKVTag(b)
-	if fn != num {
-		return false, 0, newFieldNumErr(fn, num)
-	}
-	if typ != TypeVarint {
-		return false, 0, newTypeNotMatchErr(typ, TypeVarint)
-	}
-	if b[1] < 0x80 { // fast path: canonical single-byte bool
-		return b[1] != 0, 2, nil
-	}
-	// spec-valid over-long varints (e.g. 82 00) fall back to a real consume
-	v, n := protowire.ConsumeVarint(b[1:])
-	if n < 0 {
-		return false, 0, protowire.ParseError(n)
-	}
-	return v != 0, n + 1, nil // +1 for the tag byte
+	return v, n, nil
 }
 
 func DecodeMap_VarintU32_VarintU32(b []byte, mp unsafe.Pointer) error {
-	k, n, err := decodeMap_Varint(b, 1)
-	if err != nil {
-		return err
-	}
-	b = b[n:]
-	v, _, err := decodeMap_Varint(b, 2)
+	k, v, err := decodeMapEntry(b, TypeVarint, TypeVarint)
 	if err != nil {
 		return err
 	}
@@ -208,12 +254,7 @@ func DecodeMap_VarintU32_VarintU32(b []byte, mp unsafe.Pointer) error {
 }
 
 func DecodeMap_VarintU32_ZigZag64(b []byte, mp unsafe.Pointer) error {
-	k, n, err := decodeMap_Varint(b, 1)
-	if err != nil {
-		return err
-	}
-	b = b[n:]
-	v, _, err := decodeMap_Varint(b, 2)
+	k, v, err := decodeMapEntry(b, TypeVarint, TypeVarint)
 	if err != nil {
 		return err
 	}
@@ -223,12 +264,7 @@ func DecodeMap_VarintU32_ZigZag64(b []byte, mp unsafe.Pointer) error {
 }
 
 func DecodeMap_VarintU32_VarintU64(b []byte, mp unsafe.Pointer) error {
-	k, n, err := decodeMap_Varint(b, 1)
-	if err != nil {
-		return err
-	}
-	b = b[n:]
-	v, _, err := decodeMap_Varint(b, 2)
+	k, v, err := decodeMapEntry(b, TypeVarint, TypeVarint)
 	if err != nil {
 		return err
 	}
@@ -238,12 +274,7 @@ func DecodeMap_VarintU32_VarintU64(b []byte, mp unsafe.Pointer) error {
 }
 
 func DecodeMap_VarintU32_ZigZag32(b []byte, mp unsafe.Pointer) error {
-	k, n, err := decodeMap_Varint(b, 1)
-	if err != nil {
-		return err
-	}
-	b = b[n:]
-	v, _, err := decodeMap_Varint(b, 2)
+	k, v, err := decodeMapEntry(b, TypeVarint, TypeVarint)
 	if err != nil {
 		return err
 	}
@@ -253,12 +284,7 @@ func DecodeMap_VarintU32_ZigZag32(b []byte, mp unsafe.Pointer) error {
 }
 
 func DecodeMap_VarintU32_Fixed64(b []byte, mp unsafe.Pointer) error {
-	k, n, err := decodeMap_Varint(b, 1)
-	if err != nil {
-		return err
-	}
-	b = b[n:]
-	v, _, err := decodeMap_Fixed64(b, 2)
+	k, v, err := decodeMapEntry(b, TypeVarint, TypeFixed64)
 	if err != nil {
 		return err
 	}
@@ -268,42 +294,27 @@ func DecodeMap_VarintU32_Fixed64(b []byte, mp unsafe.Pointer) error {
 }
 
 func DecodeMap_VarintU32_Fixed32(b []byte, mp unsafe.Pointer) error {
-	k, n, err := decodeMap_Varint(b, 1)
-	if err != nil {
-		return err
-	}
-	b = b[n:]
-	v, _, err := decodeMap_Fixed32(b, 2)
+	k, v, err := decodeMapEntry(b, TypeVarint, TypeFixed32)
 	if err != nil {
 		return err
 	}
 	m := ensureMapNotNil[uint32, uint32](mp)
-	(*m)[uint32(k)] = v
+	(*m)[uint32(k)] = uint32(v)
 	return nil
 }
 
 func DecodeMap_VarintU32_Bool(b []byte, mp unsafe.Pointer) error {
-	k, n, err := decodeMap_Varint(b, 1)
-	if err != nil {
-		return err
-	}
-	b = b[n:]
-	v, _, err := decodeMap_Bool(b, 2)
+	k, v, err := decodeMapEntry(b, TypeVarint, TypeVarint)
 	if err != nil {
 		return err
 	}
 	m := ensureMapNotNil[uint32, bool](mp)
-	(*m)[uint32(k)] = v
+	(*m)[uint32(k)] = v != 0
 	return nil
 }
 
 func DecodeMap_VarintU64_VarintU64(b []byte, mp unsafe.Pointer) error {
-	k, n, err := decodeMap_Varint(b, 1)
-	if err != nil {
-		return err
-	}
-	b = b[n:]
-	v, _, err := decodeMap_Varint(b, 2)
+	k, v, err := decodeMapEntry(b, TypeVarint, TypeVarint)
 	if err != nil {
 		return err
 	}
@@ -313,12 +324,7 @@ func DecodeMap_VarintU64_VarintU64(b []byte, mp unsafe.Pointer) error {
 }
 
 func DecodeMap_VarintU64_VarintU32(b []byte, mp unsafe.Pointer) error {
-	k, n, err := decodeMap_Varint(b, 1)
-	if err != nil {
-		return err
-	}
-	b = b[n:]
-	v, _, err := decodeMap_Varint(b, 2)
+	k, v, err := decodeMapEntry(b, TypeVarint, TypeVarint)
 	if err != nil {
 		return err
 	}
@@ -328,12 +334,7 @@ func DecodeMap_VarintU64_VarintU32(b []byte, mp unsafe.Pointer) error {
 }
 
 func DecodeMap_VarintU64_ZigZag64(b []byte, mp unsafe.Pointer) error {
-	k, n, err := decodeMap_Varint(b, 1)
-	if err != nil {
-		return err
-	}
-	b = b[n:]
-	v, _, err := decodeMap_Varint(b, 2)
+	k, v, err := decodeMapEntry(b, TypeVarint, TypeVarint)
 	if err != nil {
 		return err
 	}
@@ -343,12 +344,7 @@ func DecodeMap_VarintU64_ZigZag64(b []byte, mp unsafe.Pointer) error {
 }
 
 func DecodeMap_VarintU64_ZigZag32(b []byte, mp unsafe.Pointer) error {
-	k, n, err := decodeMap_Varint(b, 1)
-	if err != nil {
-		return err
-	}
-	b = b[n:]
-	v, _, err := decodeMap_Varint(b, 2)
+	k, v, err := decodeMapEntry(b, TypeVarint, TypeVarint)
 	if err != nil {
 		return err
 	}
@@ -358,12 +354,7 @@ func DecodeMap_VarintU64_ZigZag32(b []byte, mp unsafe.Pointer) error {
 }
 
 func DecodeMap_VarintU64_Fixed64(b []byte, mp unsafe.Pointer) error {
-	k, n, err := decodeMap_Varint(b, 1)
-	if err != nil {
-		return err
-	}
-	b = b[n:]
-	v, _, err := decodeMap_Fixed64(b, 2)
+	k, v, err := decodeMapEntry(b, TypeVarint, TypeFixed64)
 	if err != nil {
 		return err
 	}
@@ -373,42 +364,27 @@ func DecodeMap_VarintU64_Fixed64(b []byte, mp unsafe.Pointer) error {
 }
 
 func DecodeMap_VarintU64_Fixed32(b []byte, mp unsafe.Pointer) error {
-	k, n, err := decodeMap_Varint(b, 1)
-	if err != nil {
-		return err
-	}
-	b = b[n:]
-	v, _, err := decodeMap_Fixed32(b, 2)
+	k, v, err := decodeMapEntry(b, TypeVarint, TypeFixed32)
 	if err != nil {
 		return err
 	}
 	m := ensureMapNotNil[uint64, uint32](mp)
-	(*m)[k] = v
+	(*m)[k] = uint32(v)
 	return nil
 }
 
 func DecodeMap_VarintU64_Bool(b []byte, mp unsafe.Pointer) error {
-	k, n, err := decodeMap_Varint(b, 1)
-	if err != nil {
-		return err
-	}
-	b = b[n:]
-	v, _, err := decodeMap_Bool(b, 2)
+	k, v, err := decodeMapEntry(b, TypeVarint, TypeVarint)
 	if err != nil {
 		return err
 	}
 	m := ensureMapNotNil[uint64, bool](mp)
-	(*m)[k] = v
+	(*m)[k] = v != 0
 	return nil
 }
 
 func DecodeMap_ZigZag64_VarintU64(b []byte, mp unsafe.Pointer) error {
-	k, n, err := decodeMap_Varint(b, 1)
-	if err != nil {
-		return err
-	}
-	b = b[n:]
-	v, _, err := decodeMap_Varint(b, 2)
+	k, v, err := decodeMapEntry(b, TypeVarint, TypeVarint)
 	if err != nil {
 		return err
 	}
@@ -418,12 +394,7 @@ func DecodeMap_ZigZag64_VarintU64(b []byte, mp unsafe.Pointer) error {
 }
 
 func DecodeMap_ZigZag64_VarintU32(b []byte, mp unsafe.Pointer) error {
-	k, n, err := decodeMap_Varint(b, 1)
-	if err != nil {
-		return err
-	}
-	b = b[n:]
-	v, _, err := decodeMap_Varint(b, 2)
+	k, v, err := decodeMapEntry(b, TypeVarint, TypeVarint)
 	if err != nil {
 		return err
 	}
@@ -433,12 +404,7 @@ func DecodeMap_ZigZag64_VarintU32(b []byte, mp unsafe.Pointer) error {
 }
 
 func DecodeMap_ZigZag64_ZigZag64(b []byte, mp unsafe.Pointer) error {
-	k, n, err := decodeMap_Varint(b, 1)
-	if err != nil {
-		return err
-	}
-	b = b[n:]
-	v, _, err := decodeMap_Varint(b, 2)
+	k, v, err := decodeMapEntry(b, TypeVarint, TypeVarint)
 	if err != nil {
 		return err
 	}
@@ -448,12 +414,7 @@ func DecodeMap_ZigZag64_ZigZag64(b []byte, mp unsafe.Pointer) error {
 }
 
 func DecodeMap_ZigZag64_ZigZag32(b []byte, mp unsafe.Pointer) error {
-	k, n, err := decodeMap_Varint(b, 1)
-	if err != nil {
-		return err
-	}
-	b = b[n:]
-	v, _, err := decodeMap_Varint(b, 2)
+	k, v, err := decodeMapEntry(b, TypeVarint, TypeVarint)
 	if err != nil {
 		return err
 	}
@@ -463,12 +424,7 @@ func DecodeMap_ZigZag64_ZigZag32(b []byte, mp unsafe.Pointer) error {
 }
 
 func DecodeMap_ZigZag64_Fixed64(b []byte, mp unsafe.Pointer) error {
-	k, n, err := decodeMap_Varint(b, 1)
-	if err != nil {
-		return err
-	}
-	b = b[n:]
-	v, _, err := decodeMap_Fixed64(b, 2)
+	k, v, err := decodeMapEntry(b, TypeVarint, TypeFixed64)
 	if err != nil {
 		return err
 	}
@@ -478,42 +434,27 @@ func DecodeMap_ZigZag64_Fixed64(b []byte, mp unsafe.Pointer) error {
 }
 
 func DecodeMap_ZigZag64_Fixed32(b []byte, mp unsafe.Pointer) error {
-	k, n, err := decodeMap_Varint(b, 1)
-	if err != nil {
-		return err
-	}
-	b = b[n:]
-	v, _, err := decodeMap_Fixed32(b, 2)
+	k, v, err := decodeMapEntry(b, TypeVarint, TypeFixed32)
 	if err != nil {
 		return err
 	}
 	m := ensureMapNotNil[int64, uint32](mp)
-	(*m)[protowire.DecodeZigZag(k)] = v
+	(*m)[protowire.DecodeZigZag(k)] = uint32(v)
 	return nil
 }
 
 func DecodeMap_ZigZag64_Bool(b []byte, mp unsafe.Pointer) error {
-	k, n, err := decodeMap_Varint(b, 1)
-	if err != nil {
-		return err
-	}
-	b = b[n:]
-	v, _, err := decodeMap_Bool(b, 2)
+	k, v, err := decodeMapEntry(b, TypeVarint, TypeVarint)
 	if err != nil {
 		return err
 	}
 	m := ensureMapNotNil[int64, bool](mp)
-	(*m)[protowire.DecodeZigZag(k)] = v
+	(*m)[protowire.DecodeZigZag(k)] = v != 0
 	return nil
 }
 
 func DecodeMap_ZigZag32_VarintU64(b []byte, mp unsafe.Pointer) error {
-	k, n, err := decodeMap_Varint(b, 1)
-	if err != nil {
-		return err
-	}
-	b = b[n:]
-	v, _, err := decodeMap_Varint(b, 2)
+	k, v, err := decodeMapEntry(b, TypeVarint, TypeVarint)
 	if err != nil {
 		return err
 	}
@@ -523,12 +464,7 @@ func DecodeMap_ZigZag32_VarintU64(b []byte, mp unsafe.Pointer) error {
 }
 
 func DecodeMap_ZigZag32_VarintU32(b []byte, mp unsafe.Pointer) error {
-	k, n, err := decodeMap_Varint(b, 1)
-	if err != nil {
-		return err
-	}
-	b = b[n:]
-	v, _, err := decodeMap_Varint(b, 2)
+	k, v, err := decodeMapEntry(b, TypeVarint, TypeVarint)
 	if err != nil {
 		return err
 	}
@@ -538,12 +474,7 @@ func DecodeMap_ZigZag32_VarintU32(b []byte, mp unsafe.Pointer) error {
 }
 
 func DecodeMap_ZigZag32_ZigZag64(b []byte, mp unsafe.Pointer) error {
-	k, n, err := decodeMap_Varint(b, 1)
-	if err != nil {
-		return err
-	}
-	b = b[n:]
-	v, _, err := decodeMap_Varint(b, 2)
+	k, v, err := decodeMapEntry(b, TypeVarint, TypeVarint)
 	if err != nil {
 		return err
 	}
@@ -553,12 +484,7 @@ func DecodeMap_ZigZag32_ZigZag64(b []byte, mp unsafe.Pointer) error {
 }
 
 func DecodeMap_ZigZag32_ZigZag32(b []byte, mp unsafe.Pointer) error {
-	k, n, err := decodeMap_Varint(b, 1)
-	if err != nil {
-		return err
-	}
-	b = b[n:]
-	v, _, err := decodeMap_Varint(b, 2)
+	k, v, err := decodeMapEntry(b, TypeVarint, TypeVarint)
 	if err != nil {
 		return err
 	}
@@ -568,12 +494,7 @@ func DecodeMap_ZigZag32_ZigZag32(b []byte, mp unsafe.Pointer) error {
 }
 
 func DecodeMap_ZigZag32_Fixed64(b []byte, mp unsafe.Pointer) error {
-	k, n, err := decodeMap_Varint(b, 1)
-	if err != nil {
-		return err
-	}
-	b = b[n:]
-	v, _, err := decodeMap_Fixed64(b, 2)
+	k, v, err := decodeMapEntry(b, TypeVarint, TypeFixed64)
 	if err != nil {
 		return err
 	}
@@ -583,42 +504,27 @@ func DecodeMap_ZigZag32_Fixed64(b []byte, mp unsafe.Pointer) error {
 }
 
 func DecodeMap_ZigZag32_Fixed32(b []byte, mp unsafe.Pointer) error {
-	k, n, err := decodeMap_Varint(b, 1)
-	if err != nil {
-		return err
-	}
-	b = b[n:]
-	v, _, err := decodeMap_Fixed32(b, 2)
+	k, v, err := decodeMapEntry(b, TypeVarint, TypeFixed32)
 	if err != nil {
 		return err
 	}
 	m := ensureMapNotNil[int32, uint32](mp)
-	(*m)[int32(protowire.DecodeZigZag(k))] = v
+	(*m)[int32(protowire.DecodeZigZag(k))] = uint32(v)
 	return nil
 }
 
 func DecodeMap_ZigZag32_Bool(b []byte, mp unsafe.Pointer) error {
-	k, n, err := decodeMap_Varint(b, 1)
-	if err != nil {
-		return err
-	}
-	b = b[n:]
-	v, _, err := decodeMap_Bool(b, 2)
+	k, v, err := decodeMapEntry(b, TypeVarint, TypeVarint)
 	if err != nil {
 		return err
 	}
 	m := ensureMapNotNil[int32, bool](mp)
-	(*m)[int32(protowire.DecodeZigZag(k))] = v
+	(*m)[int32(protowire.DecodeZigZag(k))] = v != 0
 	return nil
 }
 
 func DecodeMap_Fixed64_VarintU64(b []byte, mp unsafe.Pointer) error {
-	k, n, err := decodeMap_Fixed64(b, 1)
-	if err != nil {
-		return err
-	}
-	b = b[n:]
-	v, _, err := decodeMap_Varint(b, 2)
+	k, v, err := decodeMapEntry(b, TypeFixed64, TypeVarint)
 	if err != nil {
 		return err
 	}
@@ -628,12 +534,7 @@ func DecodeMap_Fixed64_VarintU64(b []byte, mp unsafe.Pointer) error {
 }
 
 func DecodeMap_Fixed64_VarintU32(b []byte, mp unsafe.Pointer) error {
-	k, n, err := decodeMap_Fixed64(b, 1)
-	if err != nil {
-		return err
-	}
-	b = b[n:]
-	v, _, err := decodeMap_Varint(b, 2)
+	k, v, err := decodeMapEntry(b, TypeFixed64, TypeVarint)
 	if err != nil {
 		return err
 	}
@@ -643,12 +544,7 @@ func DecodeMap_Fixed64_VarintU32(b []byte, mp unsafe.Pointer) error {
 }
 
 func DecodeMap_Fixed64_ZigZag64(b []byte, mp unsafe.Pointer) error {
-	k, n, err := decodeMap_Fixed64(b, 1)
-	if err != nil {
-		return err
-	}
-	b = b[n:]
-	v, _, err := decodeMap_Varint(b, 2)
+	k, v, err := decodeMapEntry(b, TypeFixed64, TypeVarint)
 	if err != nil {
 		return err
 	}
@@ -658,12 +554,7 @@ func DecodeMap_Fixed64_ZigZag64(b []byte, mp unsafe.Pointer) error {
 }
 
 func DecodeMap_Fixed64_ZigZag32(b []byte, mp unsafe.Pointer) error {
-	k, n, err := decodeMap_Fixed64(b, 1)
-	if err != nil {
-		return err
-	}
-	b = b[n:]
-	v, _, err := decodeMap_Varint(b, 2)
+	k, v, err := decodeMapEntry(b, TypeFixed64, TypeVarint)
 	if err != nil {
 		return err
 	}
@@ -673,12 +564,7 @@ func DecodeMap_Fixed64_ZigZag32(b []byte, mp unsafe.Pointer) error {
 }
 
 func DecodeMap_Fixed64_Fixed64(b []byte, mp unsafe.Pointer) error {
-	k, n, err := decodeMap_Fixed64(b, 1)
-	if err != nil {
-		return err
-	}
-	b = b[n:]
-	v, _, err := decodeMap_Fixed64(b, 2)
+	k, v, err := decodeMapEntry(b, TypeFixed64, TypeFixed64)
 	if err != nil {
 		return err
 	}
@@ -688,243 +574,163 @@ func DecodeMap_Fixed64_Fixed64(b []byte, mp unsafe.Pointer) error {
 }
 
 func DecodeMap_Fixed64_Fixed32(b []byte, mp unsafe.Pointer) error {
-	k, n, err := decodeMap_Fixed64(b, 1)
-	if err != nil {
-		return err
-	}
-	b = b[n:]
-	v, _, err := decodeMap_Fixed32(b, 2)
+	k, v, err := decodeMapEntry(b, TypeFixed64, TypeFixed32)
 	if err != nil {
 		return err
 	}
 	m := ensureMapNotNil[uint64, uint32](mp)
-	(*m)[k] = v
+	(*m)[k] = uint32(v)
 	return nil
 }
 
 func DecodeMap_Fixed64_Bool(b []byte, mp unsafe.Pointer) error {
-	k, n, err := decodeMap_Fixed64(b, 1)
-	if err != nil {
-		return err
-	}
-	b = b[n:]
-	v, _, err := decodeMap_Bool(b, 2)
+	k, v, err := decodeMapEntry(b, TypeFixed64, TypeVarint)
 	if err != nil {
 		return err
 	}
 	m := ensureMapNotNil[uint64, bool](mp)
-	(*m)[k] = v
+	(*m)[k] = v != 0
 	return nil
 }
 
 // Fixed32 key decoders
 func DecodeMap_Fixed32_VarintU64(b []byte, mp unsafe.Pointer) error {
-	k, n, err := decodeMap_Fixed32(b, 1)
-	if err != nil {
-		return err
-	}
-	b = b[n:]
-	v, _, err := decodeMap_Varint(b, 2)
+	k, v, err := decodeMapEntry(b, TypeFixed32, TypeVarint)
 	if err != nil {
 		return err
 	}
 	m := ensureMapNotNil[uint32, uint64](mp)
-	(*m)[k] = v
+	(*m)[uint32(k)] = v
 	return nil
 }
 
 func DecodeMap_Fixed32_VarintU32(b []byte, mp unsafe.Pointer) error {
-	k, n, err := decodeMap_Fixed32(b, 1)
-	if err != nil {
-		return err
-	}
-	b = b[n:]
-	v, _, err := decodeMap_Varint(b, 2)
+	k, v, err := decodeMapEntry(b, TypeFixed32, TypeVarint)
 	if err != nil {
 		return err
 	}
 	m := ensureMapNotNil[uint32, uint32](mp)
-	(*m)[k] = uint32(v)
+	(*m)[uint32(k)] = uint32(v)
 	return nil
 }
 
 func DecodeMap_Fixed32_ZigZag64(b []byte, mp unsafe.Pointer) error {
-	k, n, err := decodeMap_Fixed32(b, 1)
-	if err != nil {
-		return err
-	}
-	b = b[n:]
-	v, _, err := decodeMap_Varint(b, 2)
+	k, v, err := decodeMapEntry(b, TypeFixed32, TypeVarint)
 	if err != nil {
 		return err
 	}
 	m := ensureMapNotNil[uint32, int64](mp)
-	(*m)[k] = protowire.DecodeZigZag(v)
+	(*m)[uint32(k)] = protowire.DecodeZigZag(v)
 	return nil
 }
 
 func DecodeMap_Fixed32_ZigZag32(b []byte, mp unsafe.Pointer) error {
-	k, n, err := decodeMap_Fixed32(b, 1)
-	if err != nil {
-		return err
-	}
-	b = b[n:]
-	v, _, err := decodeMap_Varint(b, 2)
+	k, v, err := decodeMapEntry(b, TypeFixed32, TypeVarint)
 	if err != nil {
 		return err
 	}
 	m := ensureMapNotNil[uint32, int32](mp)
-	(*m)[k] = int32(protowire.DecodeZigZag(v))
+	(*m)[uint32(k)] = int32(protowire.DecodeZigZag(v))
 	return nil
 }
 
 func DecodeMap_Fixed32_Fixed64(b []byte, mp unsafe.Pointer) error {
-	k, n, err := decodeMap_Fixed32(b, 1)
-	if err != nil {
-		return err
-	}
-	b = b[n:]
-	v, _, err := decodeMap_Fixed64(b, 2)
+	k, v, err := decodeMapEntry(b, TypeFixed32, TypeFixed64)
 	if err != nil {
 		return err
 	}
 	m := ensureMapNotNil[uint32, uint64](mp)
-	(*m)[k] = v
+	(*m)[uint32(k)] = v
 	return nil
 }
 
 func DecodeMap_Fixed32_Fixed32(b []byte, mp unsafe.Pointer) error {
-	k, n, err := decodeMap_Fixed32(b, 1)
-	if err != nil {
-		return err
-	}
-	b = b[n:]
-	v, _, err := decodeMap_Fixed32(b, 2)
+	k, v, err := decodeMapEntry(b, TypeFixed32, TypeFixed32)
 	if err != nil {
 		return err
 	}
 	m := ensureMapNotNil[uint32, uint32](mp)
-	(*m)[k] = v
+	(*m)[uint32(k)] = uint32(v)
 	return nil
 }
 
 func DecodeMap_Fixed32_Bool(b []byte, mp unsafe.Pointer) error {
-	k, n, err := decodeMap_Fixed32(b, 1)
-	if err != nil {
-		return err
-	}
-	b = b[n:]
-	v, _, err := decodeMap_Bool(b, 2)
+	k, v, err := decodeMapEntry(b, TypeFixed32, TypeVarint)
 	if err != nil {
 		return err
 	}
 	m := ensureMapNotNil[uint32, bool](mp)
-	(*m)[k] = v
+	(*m)[uint32(k)] = v != 0
 	return nil
 }
 
 // Bool key decoders
 func DecodeMap_Bool_VarintU64(b []byte, mp unsafe.Pointer) error {
-	k, n, err := decodeMap_Bool(b, 1)
-	if err != nil {
-		return err
-	}
-	b = b[n:]
-	v, _, err := decodeMap_Varint(b, 2)
+	k, v, err := decodeMapEntry(b, TypeVarint, TypeVarint)
 	if err != nil {
 		return err
 	}
 	m := ensureMapNotNil[bool, uint64](mp)
-	(*m)[k] = v
+	(*m)[k != 0] = v
 	return nil
 }
 
 func DecodeMap_Bool_VarintU32(b []byte, mp unsafe.Pointer) error {
-	k, n, err := decodeMap_Bool(b, 1)
-	if err != nil {
-		return err
-	}
-	b = b[n:]
-	v, _, err := decodeMap_Varint(b, 2)
+	k, v, err := decodeMapEntry(b, TypeVarint, TypeVarint)
 	if err != nil {
 		return err
 	}
 	m := ensureMapNotNil[bool, uint32](mp)
-	(*m)[k] = uint32(v)
+	(*m)[k != 0] = uint32(v)
 	return nil
 }
 
 func DecodeMap_Bool_ZigZag64(b []byte, mp unsafe.Pointer) error {
-	k, n, err := decodeMap_Bool(b, 1)
-	if err != nil {
-		return err
-	}
-	b = b[n:]
-	v, _, err := decodeMap_Varint(b, 2)
+	k, v, err := decodeMapEntry(b, TypeVarint, TypeVarint)
 	if err != nil {
 		return err
 	}
 	m := ensureMapNotNil[bool, int64](mp)
-	(*m)[k] = protowire.DecodeZigZag(v)
+	(*m)[k != 0] = protowire.DecodeZigZag(v)
 	return nil
 }
 
 func DecodeMap_Bool_ZigZag32(b []byte, mp unsafe.Pointer) error {
-	k, n, err := decodeMap_Bool(b, 1)
-	if err != nil {
-		return err
-	}
-	b = b[n:]
-	v, _, err := decodeMap_Varint(b, 2)
+	k, v, err := decodeMapEntry(b, TypeVarint, TypeVarint)
 	if err != nil {
 		return err
 	}
 	m := ensureMapNotNil[bool, int32](mp)
-	(*m)[k] = int32(protowire.DecodeZigZag(v))
+	(*m)[k != 0] = int32(protowire.DecodeZigZag(v))
 	return nil
 }
 
 func DecodeMap_Bool_Fixed64(b []byte, mp unsafe.Pointer) error {
-	k, n, err := decodeMap_Bool(b, 1)
-	if err != nil {
-		return err
-	}
-	b = b[n:]
-	v, _, err := decodeMap_Fixed64(b, 2)
+	k, v, err := decodeMapEntry(b, TypeVarint, TypeFixed64)
 	if err != nil {
 		return err
 	}
 	m := ensureMapNotNil[bool, uint64](mp)
-	(*m)[k] = v
+	(*m)[k != 0] = v
 	return nil
 }
 
 func DecodeMap_Bool_Fixed32(b []byte, mp unsafe.Pointer) error {
-	k, n, err := decodeMap_Bool(b, 1)
-	if err != nil {
-		return err
-	}
-	b = b[n:]
-	v, _, err := decodeMap_Fixed32(b, 2)
+	k, v, err := decodeMapEntry(b, TypeVarint, TypeFixed32)
 	if err != nil {
 		return err
 	}
 	m := ensureMapNotNil[bool, uint32](mp)
-	(*m)[k] = v
+	(*m)[k != 0] = uint32(v)
 	return nil
 }
 
 func DecodeMap_Bool_Bool(b []byte, mp unsafe.Pointer) error {
-	k, n, err := decodeMap_Bool(b, 1)
-	if err != nil {
-		return err
-	}
-	b = b[n:]
-	v, _, err := decodeMap_Bool(b, 2)
+	k, v, err := decodeMapEntry(b, TypeVarint, TypeVarint)
 	if err != nil {
 		return err
 	}
 	m := ensureMapNotNil[bool, bool](mp)
-	(*m)[k] = v
+	(*m)[k != 0] = v != 0
 	return nil
 }

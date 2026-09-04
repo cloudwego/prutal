@@ -26,20 +26,9 @@ import (
 
 func TestEncodeTag(t *testing.T) {
 	v := EncodeTag(1233, TypeBytes)
-	n, wt := DecodeTag(v)
-	assert.Equal(t, int32(1233), n)
+	n, wt := protowire.DecodeTag(v)
+	assert.Equal(t, protowire.Number(1233), n)
 	assert.Equal(t, TypeBytes, wt)
-}
-
-func TestConsumeKVTag(t *testing.T) {
-	v := EncodeTag(2, TypeBytes)
-	n, wt := ConsumeKVTag([]byte{byte(v)})
-	assert.Equal(t, int32(2), n)
-	assert.Equal(t, TypeBytes, wt)
-
-	n, wt = ConsumeKVTag([]byte{})
-	assert.Equal(t, int32(-1), n)
-	assert.Equal(t, Type(-1), wt)
 }
 
 var (

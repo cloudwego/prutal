@@ -228,8 +228,9 @@ func (e *Encoder) AppendMapField(b []byte, f *desc.FieldDesc, p unsafe.Pointer, 
 		b = wire.LenReserve(b)
 		beforesz := len(b)
 
-		// Key then value, both always present: the canonical form the strict
-		// entry decoders rely on (see the TODO in wire/decoder_map.go)
+		// Key then value, both always present: the canonical form other
+		// implementations expect. The decoders accept anything the wire
+		// format allows (see decodeMapEntry in wire/decoder_map.go).
 		b = wire.AppendKeyTag(b, f.KeyWireType)
 		b = f.KeyAppendFunc(b, kp)
 

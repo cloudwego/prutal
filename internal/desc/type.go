@@ -199,6 +199,14 @@ func (p *TmpMapVars) Reset() {
 	}
 }
 
+// ZeroKey resets the temporary key var to the zero value of the map key type.
+// A map entry may omit its key field, in which case the key defaults to zero
+// instead of keeping what the previous entry decoded into the pooled var.
+func (p *TmpMapVars) ZeroKey() { p.k.SetZero() }
+
+// ZeroVal resets the temporary value var, for entries that omit their value.
+func (p *TmpMapVars) ZeroVal() { p.v.SetZero() }
+
 // for (*sync.Pool).New
 func newTmpMapVarsFunc(rt reflect.Type) func() any {
 	if rt.Kind() != reflect.Map {

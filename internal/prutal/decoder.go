@@ -308,26 +308,19 @@ func (d *Decoder) DecodeStruct(b []byte, base unsafe.Pointer, s *desc.StructDesc
 	return i, nil
 }
 
-// DecodeMapKey ...
+// decodeMapKey decodes a map key into p from b, which starts right after the
+// entry field tag. The caller has already matched the tag wire type against
+// f.KeyWireType, so the key type alone decides how to read the value.
+//
 // keyType = "int32" | "int64" | "uint32" | "uint64" | "sint32" | "sint64" |
 // "fixed32" | "fixed64" | "sfixed32" | "sfixed64" | "bool" | "string"
-func (d *Decoder) DecodeMapKey(b []byte, p unsafe.Pointer, f *desc.FieldDesc) (int, error) {
-	num, typ := wire.ConsumeKVTag(b)
-	if num != 1 { // key num
-		return 0, fmt.Errorf("key field num not match, got %d expect 1", num)
-	}
-	i := 1 // one byte for map key tag
-
+func (d *Decoder) decodeMapKey(b []byte, p unsafe.Pointer, f *desc.FieldDesc) (int, error) {
 	t := f.T.K
 	tag := f.KeyType
 
-	switch typ {
-	case wire.TypeVarint: // case: VARINT
-		if tag != desc.TypeVarint && tag != desc.TypeZigZag32 && tag != desc.TypeZigZag64 {
-			return i, newWireTypeNotMatch(typ, tag)
-		}
-
-		u64, n := protowire.ConsumeVarint(b[i:])
+	switch tag {
+	case desc.TypeVarint, desc.TypeZigZag32, desc.TypeZigZag64: // case: VARINT
+		u64, n := protowire.ConsumeVarint(b)
 		if n < 0 {
 			return 0, protowire.ParseError(n)
 		}
@@ -346,52 +339,45 @@ func (d *Decoder) DecodeMapKey(b []byte, p unsafe.Pointer, f *desc.FieldDesc) (i
 		case reflect.Bool: // 1 for true, 0 for false
 			*(*byte)(p) = byte(u64 & 0x1)
 		}
-		i += n
+		return n, nil
 
-	case wire.TypeFixed32: // case: I32
-		if tag != desc.TypeFixed32 {
-			return i, newWireTypeNotMatch(typ, tag)
-		}
-
-		u32, n := protowire.ConsumeFixed32(b[i:])
+	case desc.TypeFixed32: // case: I32
+		u32, n := protowire.ConsumeFixed32(b)
 		if n < 0 {
 			return 0, protowire.ParseError(n)
 		}
 		switch t.Kind {
 		case reflect.Int32:
 			*(*int32)(p) = int32(u32)
-		case reflect.Uint32, reflect.Float32:
+		case reflect.Uint32:
 			*(*uint32)(p) = u32
 		}
-		i += n
+		return n, nil
 
-	case wire.TypeFixed64: // case: I64
-		if tag != desc.TypeFixed64 {
-			return i, newWireTypeNotMatch(typ, tag)
-		}
-
-		u64, n := protowire.ConsumeFixed64(b[i:])
+	case desc.TypeFixed64: // case: I64
+		u64, n := protowire.ConsumeFixed64(b)
 		if n < 0 {
 			return 0, protowire.ParseError(n)
 		}
 		switch t.Kind {
 		case reflect.Int64:
 			*(*int64)(p) = int64(u64)
-		case reflect.Uint64, reflect.Float64:
+		case reflect.Uint64:
 			*(*uint64)(p) = u64
 		}
-		i += n
+		return n, nil
 
-	case wire.TypeBytes: // case: LEN
-		// for map, can only be string
+	case desc.TypeBytes: // case: LEN
+		// p is sized for the key type, so writing a string header through it
+		// is only safe once the key really is a string; desc guarantees that,
+		// but the check keeps a descriptor regression from corrupting memory
 		if t.Kind != reflect.String {
-			return i, newWireTypeNotMatch(typ, tag)
+			return 0, newWireTypeNotMatch(f.KeyWireType, tag)
 		}
-		fb, n := protowire.ConsumeBytes(b[i:])
+		fb, n := protowire.ConsumeBytes(b)
 		if n < 0 {
 			return 0, protowire.ParseError(n)
 		}
-		i += n
 		if len(fb) > 0 {
 			data := d.Malloc(len(fb), 1, 0)
 			copy(unsafe.Slice((*byte)(data), len(fb)), fb)
@@ -401,39 +387,27 @@ func (d *Decoder) DecodeMapKey(b []byte, p unsafe.Pointer, f *desc.FieldDesc) (i
 		} else {
 			*(*string)(p) = ""
 		}
-
-	default:
-		// unknown wiretype
-		return i, newWireTypeNotMatch(typ, tag)
+		return n, nil
 	}
-
-	return i, nil
+	return 0, fmt.Errorf("unsupported map key type %s", tag)
 }
 
-// DecodeMapValue ...
-// like DecodeMapKey plus "bytes" | messageType | enumType
-func (d *Decoder) DecodeMapValue(b []byte, p unsafe.Pointer, f *desc.FieldDesc, maxdepth int) (int, error) {
-	num, typ := wire.ConsumeKVTag(b)
-	if num != 2 { // val num
-		return 0, fmt.Errorf("val field num not match, got %d expect 2", num)
-	}
-	i := 1 // one byte for map value tag
-
+// decodeMapValue decodes a map value into p from b, which starts right after
+// the entry field tag. Like decodeMapKey, plus "bytes" | messageType |
+// enumType. The caller has already matched the tag wire type against
+// f.ValWireType and, for a message value, dereferenced p to the message it
+// allocated for the entry.
+func (d *Decoder) decodeMapValue(b []byte, p unsafe.Pointer, f *desc.FieldDesc, maxdepth int) (int, error) {
 	t := f.T.V
 	tag := f.ValType
 
 	if t.IsPointer {
-		p = d.mallocIfPointer(p, t)
 		t = t.V
 	}
 
-	switch typ {
-	case wire.TypeVarint: // case: VARINT
-		if tag != desc.TypeVarint && tag != desc.TypeZigZag32 && tag != desc.TypeZigZag64 {
-			return i, newWireTypeNotMatch(typ, tag)
-		}
-
-		u64, n := protowire.ConsumeVarint(b[i:])
+	switch tag {
+	case desc.TypeVarint, desc.TypeZigZag32, desc.TypeZigZag64: // case: VARINT
+		u64, n := protowire.ConsumeVarint(b)
 		if n < 0 {
 			return 0, protowire.ParseError(n)
 		}
@@ -452,14 +426,10 @@ func (d *Decoder) DecodeMapValue(b []byte, p unsafe.Pointer, f *desc.FieldDesc, 
 		case reflect.Bool: // 1 for true, 0 for false
 			*(*byte)(p) = byte(u64 & 0x1)
 		}
-		i += n
+		return n, nil
 
-	case wire.TypeFixed32: // case: I32
-		if tag != desc.TypeFixed32 {
-			return i, newWireTypeNotMatch(typ, tag)
-		}
-
-		u32, n := protowire.ConsumeFixed32(b[i:])
+	case desc.TypeFixed32: // case: I32
+		u32, n := protowire.ConsumeFixed32(b)
 		if n < 0 {
 			return 0, protowire.ParseError(n)
 		}
@@ -469,14 +439,10 @@ func (d *Decoder) DecodeMapValue(b []byte, p unsafe.Pointer, f *desc.FieldDesc, 
 		case reflect.Uint32, reflect.Float32:
 			*(*uint32)(p) = u32
 		}
-		i += n
+		return n, nil
 
-	case wire.TypeFixed64: // case: I64
-		if tag != desc.TypeFixed64 {
-			return i, newWireTypeNotMatch(typ, tag)
-		}
-
-		u64, n := protowire.ConsumeFixed64(b[i:])
+	case desc.TypeFixed64: // case: I64
+		u64, n := protowire.ConsumeFixed64(b)
 		if n < 0 {
 			return 0, protowire.ParseError(n)
 		}
@@ -486,15 +452,14 @@ func (d *Decoder) DecodeMapValue(b []byte, p unsafe.Pointer, f *desc.FieldDesc, 
 		case reflect.Uint64, reflect.Float64:
 			*(*uint64)(p) = u64
 		}
-		i += n
+		return n, nil
 
-	case wire.TypeBytes: // case: LEN
-		// string, bytes, embedded messages (struct or map), packed repeated fields
-		fb, n := protowire.ConsumeBytes(b[i:])
+	case desc.TypeBytes: // case: LEN
+		// string, bytes or embedded message
+		fb, n := protowire.ConsumeBytes(b)
 		if n < 0 {
 			return 0, protowire.ParseError(n)
 		}
-		i += n
 		switch t.Kind {
 		case desc.KindBytes:
 			if len(fb) > 0 {
@@ -516,48 +481,120 @@ func (d *Decoder) DecodeMapValue(b []byte, p unsafe.Pointer, f *desc.FieldDesc, 
 			}
 		case reflect.Struct:
 			if _, err := d.DecodeStruct(fb, p, t.S, maxdepth-1); err != nil {
-				return i, err
+				return n, err
 			}
 		default:
-			return i, newWireTypeNotMatch(typ, tag)
+			return n, newWireTypeNotMatch(f.ValWireType, tag)
 		}
-
-	default:
-		// unknown wiretype
-		return i, newWireTypeNotMatch(typ, tag)
+		return n, nil
 	}
-
-	return i, nil
+	return 0, fmt.Errorf("unsupported map value type %s", tag)
 }
 
-// TODO: this requires key-then-value order and both fields present in the
-// entry (same limitation as the fast DecodeMap* paths in internal/wire).
-// The wire format allows any order, omitted key/value and unknown entry fields.
+// DecodeMapPair decodes one map entry of f into the map at p.
+//
+// Map entries are encoded exactly like a message with two fields: #1 for the
+// key and #2 for the value. Both are optional on the wire, may come in either
+// order and may repeat, and an entry may carry unknown fields, so it is
+// scanned like a struct instead of being assumed to be in the canonical form
+// that AppendMapField writes. A missing key or value contributes its zero
+// value, and of repeated occurrences the last one wins.
 func (d *Decoder) DecodeMapPair(b []byte, p unsafe.Pointer, f *desc.FieldDesc, tmp *desc.TmpMapVars, maxdepth int) (int, error) {
 	tmp.Reset()
 
-	// maps are encoded exactly like a repeated message field:
-	// as a sequence of LEN-typed records, with two fields each.
-	// #1 for key and #2 for value.
 	var m reflect.Value
 	if *(*unsafe.Pointer)(p) == nil {
 		m = reflect.MakeMap(f.T.T)
 		*(*unsafe.Pointer)(p) = m.UnsafePointer()
 	}
 
+	// tmp is pooled, so every entry must fully overwrite the key and value
+	// vars. A message value is allocated here rather than on the first value
+	// field: that both clears the pointer the previous entry left behind --
+	// without it two keys would end up sharing one message -- and lets
+	// repeated value fields merge into one message instead of replacing it.
+	ptrVal := f.T.V.IsPointer
+	vp := tmp.ValPointer()
+	if ptrVal {
+		vp = d.mallocIfPointer(vp, f.T.V)
+	}
+
+	// Entry tag bytes, see decodeMapEntry in internal/wire for why the
+	// single-byte match is safe and why a miss still decodes the full tag.
+	// Keep the two loops in sync.
+	ktag := byte(wire.MapKeyFieldNum)<<3 | byte(f.KeyWireType)
+	vtag := byte(wire.MapValFieldNum)<<3 | byte(f.ValWireType)
+
 	i := 0
-	n, err := d.DecodeMapKey(b, tmp.KeyPointer(), f)
-	if err != nil {
-		return 0, err
-	}
-	i += n
+	hasKey, hasVal := false, false
 
-	n, err = d.DecodeMapValue(b[i:], tmp.ValPointer(), f, maxdepth)
-	if err != nil {
-		return i, err
+	// Fast path: the canonical entry, key then value. The general scan below
+	// carries on from wherever this stops, so anything after or instead of
+	// the two fields is still handled.
+	if len(b) > 0 && b[0] == ktag {
+		n, err := d.decodeMapKey(b[1:], tmp.KeyPointer(), f)
+		if err != nil {
+			return 1, err
+		}
+		i = 1 + n
+		hasKey = true
+		if i < len(b) && b[i] == vtag {
+			n, err = d.decodeMapValue(b[i+1:], vp, f, maxdepth)
+			if err != nil {
+				return i, err
+			}
+			i += 1 + n
+			hasVal = true
+		}
 	}
-	i += n
 
+	for i < len(b) {
+		var n int
+		var err error
+		switch b[i] {
+		case ktag:
+			n, err = d.decodeMapKey(b[i+1:], tmp.KeyPointer(), f)
+			n++ // entry tag byte
+			hasKey = true
+
+		case vtag:
+			n, err = d.decodeMapValue(b[i+1:], vp, f, maxdepth)
+			n++ // entry tag byte
+			hasVal = true
+
+		default:
+			num, typ, m, terr := wire.ConsumeMapEntryTag(b[i:])
+			if terr != nil {
+				return i, terr
+			}
+			switch {
+			case num == wire.MapKeyFieldNum && typ == f.KeyWireType:
+				n, err = d.decodeMapKey(b[i+m:], tmp.KeyPointer(), f)
+				hasKey = true
+			case num == wire.MapValFieldNum && typ == f.ValWireType:
+				n, err = d.decodeMapValue(b[i+m:], vp, f, maxdepth)
+				hasVal = true
+			default:
+				// an unknown field, or a key or value carrying an unexpected
+				// wire type: the reference implementation skips both the same way
+				if n = protowire.ConsumeFieldValue(num, typ, b[i+m:]); n < 0 {
+					err = protowire.ParseError(n)
+				}
+			}
+			n += m
+		}
+		if err != nil {
+			return i, err
+		}
+		i += n
+	}
+
+	if !hasKey {
+		tmp.ZeroKey()
+	}
+	if !hasVal && !ptrVal { // a message value was already allocated above
+		tmp.ZeroVal()
+	}
 	tmp.Update(tmp, p)
 	return i, nil
 }

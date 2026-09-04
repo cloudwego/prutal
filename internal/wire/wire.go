@@ -16,7 +16,11 @@
 
 package wire
 
-import "github.com/cloudwego/prutal/internal/protowire"
+import (
+	"errors"
+
+	"github.com/cloudwego/prutal/internal/protowire"
+)
 
 type Type = protowire.Type
 
@@ -29,15 +33,30 @@ const ( // align with protowire.Type
 	TypeEGroup  Type = 4
 )
 
-// ConsumeKVTag implements ConsumeTag for key and value of map
+// Map entries are encoded exactly like a message with two fields:
+// #1 for the key and #2 for the value.
+const (
+	MapKeyFieldNum = 1
+	MapValFieldNum = 2
+)
+
+var errFieldNumber = errors.New("invalid field number")
+
+// ConsumeMapEntryTag reads one map entry field tag.
 //
-// for map pairs, num=1 for key, and num=2 for value.
-// the max int should be 2<<3 + 15 = 31 which always < 0x80 (128)
-func ConsumeKVTag(b []byte) (int32, Type) {
-	if len(b) > 0 && uint64(b[0]) < 0x80 {
-		return DecodeTag(uint64(b[0]))
+// protowire.ConsumeTag mirrors the reference package and only rejects field
+// numbers below the minimum; the reference decoders range-check the upper
+// bound themselves before using the number. Doing the same here rejects such
+// an entry instead of quietly filing the field away as unknown.
+func ConsumeMapEntryTag(b []byte) (protowire.Number, Type, int, error) {
+	num, typ, n := protowire.ConsumeTag(b)
+	if n < 0 {
+		return 0, 0, 0, protowire.ParseError(n)
 	}
-	return -1, -1
+	if num > protowire.MaxValidNumber {
+		return 0, 0, 0, errFieldNumber
+	}
+	return num, typ, n, nil
 }
 
 // EncodeTag ...
@@ -47,19 +66,14 @@ func EncodeTag(num int32, t Type) uint64 {
 	return uint64(num)<<3 | uint64(t)
 }
 
-// DecodeTag ...
-func DecodeTag(v uint64) (int32, Type) {
-	return int32(uint32(v >> 3)), Type(v & 0b111)
-}
-
 // AppendKeyTag ... faster version of AppendVarint(b, EncodeTag(1, t))
 func AppendKeyTag(b []byte, t Type) []byte {
-	return append(b, byte(1)<<3|byte(t))
+	return append(b, byte(MapKeyFieldNum)<<3|byte(t))
 }
 
 // AppendValTag ... faster version of AppendVarint(b, EncodeTag(2, t))
 func AppendValTag(b []byte, t Type) []byte {
-	return append(b, byte(2)<<3|byte(t))
+	return append(b, byte(MapValFieldNum)<<3|byte(t))
 }
 
 func SizeVarint(v uint64) int {
