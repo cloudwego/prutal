@@ -164,11 +164,21 @@ const (
 	// serialized even when it holds a zero value, otherwise the chosen case
 	// would be lost on round-trip. Types without a cheap test end up here too.
 	ZeroKindNone ZeroKind = iota
-	ZeroKindU64           // int64, uint64, float64, or a pointer or map on 64-bit
-	ZeroKindU32           // int32, uint32, float32, or a pointer or map on 32-bit
+	ZeroKindU64           // int64, uint64, float64, or a pointer, map or bytes-with-presence on 64-bit
+	ZeroKindU32           // int32, uint32, float32, or a pointer, map or bytes-with-presence on 32-bit
 	ZeroKindU8            // bool
-	ZeroKindLen           // string, []byte or slice: zero when the header Len is 0
+	ZeroKindLen           // string, slice, or bytes without presence: zero when the header Len is 0
 )
+
+// zeroKindWord tests one machine word, which is how pointers and maps are
+// tested for nil, and the data pointer of a slice header along with them:
+// it is the first word of hack.SliceHeader, which the hack self-test checks.
+var zeroKindWord = func() ZeroKind {
+	if unsafe.Sizeof(uintptr(0)) == 4 {
+		return ZeroKindU32
+	}
+	return ZeroKindU64
+}()
 
 type FieldDesc struct {
 	ID       int32
@@ -181,6 +191,16 @@ type FieldDesc struct {
 	IsList   bool
 	IsMap    bool
 	ZeroKind ZeroKind
+
+	// HasPresence reports whether a singular field tells "set" from "zero",
+	// as fields of proto2 and editions files and proto3 optional fields do.
+	// It is derived from the struct tag the way protoc-gen-go writes it: a
+	// field of a proto3 file carries "proto3", and "oneof" on top of that
+	// when it is optional; prutalgen adds "implicit" for an edition 2023
+	// field without presence. A tag with no marker at all reads as having
+	// presence. The encoder needs it for bytes fields only; every other kind
+	// with presence is a pointer, which is nil when unset.
+	HasPresence bool
 
 	TagType TagType
 	WireTag uint64 //  wire.EncodeTag(f.ID, wireType)
@@ -290,6 +310,10 @@ func zeroKindOf(f *FieldDesc) ZeroKind {
 	switch {
 	case f.IsOneof():
 		return ZeroKindNone
+	case t.Kind == KindBytes && f.HasPresence:
+		// a present but empty bytes field is a non-nil empty slice, so the
+		// data pointer, the first word of hack.SliceHeader, tells it from unset
+		return zeroKindWord
 	case t.SliceLike:
 		// checked before the sizes: on 386 a string header is 8 bytes and
 		// "" has a non-nil data pointer, so a size-based test would treat

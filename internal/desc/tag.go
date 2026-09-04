@@ -41,6 +41,7 @@ const (
 
 func (p *FieldDesc) parseStructTag(tag string) error {
 	ss := strings.Split(tag, ",")
+	proto3, oneof, implicit := false, false, false
 loop:
 	for _, s := range ss {
 		s = strings.TrimSpace(s)
@@ -75,6 +76,18 @@ loop:
 			return errGroupNotSupported
 		case s == "packed":
 			p.Packed = true
+		case s == "proto3":
+			// written by protoc-gen-go and prutalgen for every field of a
+			// proto3 file; fields of proto2 and editions files do not have it
+			proto3 = true
+		case s == "oneof":
+			// a oneof member, or a proto3 optional field: protoc-gen-go
+			// implements the latter as a synthetic oneof and tags it the same
+			oneof = true
+		case s == "implicit":
+			// prutalgen's marker for an edition 2023 field with
+			// features.field_presence = IMPLICIT; protoc-gen-go has none
+			implicit = true
 		case strings.Trim(s, "1234567890") == "":
 			n, err := strconv.ParseUint(s, 10, 32)
 			if err != nil {
@@ -99,6 +112,7 @@ loop:
 	if p.ID == 0 {
 		return errors.New("missing or invalid field number")
 	}
+	p.HasPresence = !p.Repeated && !implicit && (!proto3 || oneof)
 	if p.Packed {
 		p.WireTag = wire.EncodeTag(p.ID, wire.TypeBytes)
 	} else {

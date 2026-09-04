@@ -291,3 +291,55 @@ func Benchmark_Encode_Map_Struct(b *testing.B) {
 		_, _ = MarshalAppend(buf[:0], p)
 	}
 }
+
+// A bytes field with presence (proto2, editions, proto3 optional) is set when
+// non-nil: an empty slice must be serialized as an empty field, as
+// protobuf-go does, while a bytes field of a proto3 file is only serialized
+// when it has content.
+func TestEncodeBytesPresence(t *testing.T) {
+	type presence struct {
+		By []byte `protobuf:"bytes,1,opt,name=by"`
+	}
+	type optional struct {
+		By []byte `protobuf:"bytes,1,opt,name=by,proto3,oneof"`
+	}
+	type implicit struct {
+		By []byte `protobuf:"bytes,1,opt,name=by,proto3"`
+	}
+	type edition struct { // edition 2023 with features.field_presence = IMPLICIT
+		By []byte `protobuf:"bytes,1,opt,name=by,implicit"`
+	}
+	empty := []byte{0x0a, 0x00}
+	for _, c := range []struct {
+		name string
+		v    any
+		want []byte
+	}{
+		{"presence nil", &presence{}, nil},
+		{"presence empty", &presence{By: []byte{}}, empty},
+		{"optional nil", &optional{}, nil},
+		{"optional empty", &optional{By: []byte{}}, empty},
+		{"implicit nil", &implicit{}, nil},
+		{"implicit empty", &implicit{By: []byte{}}, nil},
+		{"implicit set", &implicit{By: []byte{1}}, []byte{0x0a, 0x01, 0x01}},
+		{"edition implicit empty", &edition{By: []byte{}}, nil},
+		{"edition implicit set", &edition{By: []byte{1}}, []byte{0x0a, 0x01, 0x01}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			b, err := MarshalAppend(nil, c.v)
+			assert.NoError(t, err)
+			assert.BytesEqual(t, c.want, b)
+			sz, err := Size(c.v)
+			assert.NoError(t, err)
+			assert.Equal(t, len(c.want), sz)
+		})
+	}
+
+	// an empty field decodes to a present, empty slice and survives a round-trip
+	v := &presence{}
+	assert.NoError(t, Unmarshal(empty, v))
+	assert.True(t, v.By != nil && len(v.By) == 0)
+	b, err := MarshalAppend(nil, v)
+	assert.NoError(t, err)
+	assert.BytesEqual(t, empty, b)
+}

@@ -48,9 +48,10 @@ const (
 	f_enum_type               = "features.enum_type"
 )
 
-const ( // proto2 options
+const ( // recognized built-in options
 	option_packed      = "packed"
 	option_allow_alias = "allow_alias"
+	option_default     = "default"
 )
 
 // https://protobuf.dev/programming-guides/proto3/#scalar

@@ -21,6 +21,7 @@ import (
 	"testing"
 	"unsafe"
 
+	"github.com/cloudwego/prutal/internal/hack"
 	"github.com/cloudwego/prutal/internal/testutils/assert"
 )
 
@@ -882,7 +883,9 @@ func TestZeroKind(t *testing.T) {
 	}
 	want := map[string]ZeroKind{
 		"I64": ZeroKindU64, "I32": ZeroKindU32, "B": ZeroKindU8,
-		"S": ZeroKindLen, "Bytes": ZeroKindLen, "List": ZeroKindLen,
+		// no "proto3" marker in the tag, so Bytes has presence and is
+		// tested by its data pointer, see TestBytesPresence
+		"S": ZeroKindLen, "Bytes": ptr, "List": ZeroKindLen,
 		"M": ptr, "Ptr": ptr, "F32": ZeroKindU32, "F64": ZeroKindU64,
 	}
 	assert.Equal(t, len(want), len(sd.Fields))
@@ -895,4 +898,47 @@ func TestZeroKind(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, ZeroKindU32, sd.Fields[0].ZeroKind)
 	assert.Equal(t, ZeroKindNone, sd.Fields[1].ZeroKind)
+}
+
+type bytesPresenceMessage struct {
+	Proto2   []byte   `protobuf:"bytes,1,opt,name=proto2"`
+	Proto3   []byte   `protobuf:"bytes,2,opt,name=proto3,proto3"`
+	Optional []byte   `protobuf:"bytes,3,opt,name=optional,proto3,oneof"`
+	Repeated [][]byte `protobuf:"bytes,4,rep,name=repeated,proto3"`
+	Str      string   `protobuf:"bytes,5,opt,name=str"`
+	Ptr      *string  `protobuf:"bytes,6,opt,name=ptr,proto3,oneof"`
+	Implicit []byte   `protobuf:"bytes,7,opt,name=implicit,implicit"`
+}
+
+// A bytes field with presence is set when non-nil, even if empty, so it must
+// be tested by its data pointer rather than its length; the presence itself
+// follows the "proto3" and "oneof" tag markers of protoc-gen-go.
+func TestBytesPresence(t *testing.T) {
+	sd, err := GetOrParse(reflect.ValueOf(&bytesPresenceMessage{}))
+	assert.NoError(t, err)
+	word := ZeroKindU64
+	if unsafe.Sizeof(uintptr(0)) == 4 {
+		word = ZeroKindU32
+	}
+	want := map[string]struct {
+		presence bool
+		kind     ZeroKind
+	}{
+		"Proto2":   {true, word},
+		"Proto3":   {false, ZeroKindLen},
+		"Optional": {true, word},
+		"Repeated": {false, ZeroKindLen},
+		"Str":      {true, ZeroKindLen}, // a string with presence is a *string; plain strings test Len
+		"Ptr":      {true, word},
+		"Implicit": {false, ZeroKindLen},
+	}
+	assert.Equal(t, len(want), len(sd.Fields))
+	for _, f := range sd.Fields {
+		assert.Equal(t, want[f.Name].presence, f.HasPresence, f.Name)
+		assert.Equal(t, want[f.Name].kind, f.ZeroKind, f.Name)
+	}
+
+	// the word test reads the data pointer of the slice header, which must
+	// therefore be its first word; hack.testhack checks the same at init
+	assert.Equal(t, uintptr(0), unsafe.Offsetof(hack.SliceHeader{}.Data))
 }

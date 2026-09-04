@@ -186,17 +186,71 @@ func (f *Field) IsPointer() bool {
 		return true // proto2 is pointer by default
 	}
 	if p.IsEdition2023() {
-		s, ok := f.Options.Get(f_field_presence)
-		if ok {
-			return s == "EXPLICIT"
-		}
-		s, ok = p.Options.Get(f_field_presence)
-		if ok {
-			return s == "EXPLICIT"
+		if s, ok := f.fieldPresence(); ok {
+			return s != "IMPLICIT" // EXPLICIT or LEGACY_REQUIRED
 		}
 		return true // Default: EXPLICIT, which is same as proto2
 	}
 	return false // proto3?
+}
+
+// fieldPresence returns features.field_presence as set on the field, else on
+// the file; protoc allows the feature nowhere else.
+func (f *Field) fieldPresence() (string, bool) {
+	if s, ok := f.Options.Get(f_field_presence); ok {
+		return s, true
+	}
+	return f.Msg.Proto.Options.Get(f_field_presence)
+}
+
+// verifyFieldPresence checks direct option applicability and restrictions that
+// depend on the resolved field kind and inherited file features.
+func (f *Field) verifyFieldPresence() error {
+	for _, o := range f.Options {
+		if o.Name != f_field_presence {
+			continue
+		}
+		switch {
+		case f.IsMap():
+			return fmt.Errorf("option %q cannot be set on map field %q", o.Name, f.Name)
+		case f.Repeated:
+			return fmt.Errorf("option %q cannot be set on repeated field %q", o.Name, f.Name)
+		case f.Oneof != nil:
+			return fmt.Errorf("option %q cannot be set on oneof field %q", o.Name, f.Name)
+		case f.Type != nil && f.IsMessage() && o.Value == "IMPLICIT":
+			return fmt.Errorf("option %q cannot use %q on message field %q", o.Name, o.Value, f.Name)
+		}
+	}
+	if f.IsMap() && f.Msg != nil && f.Msg.Proto != nil && f.Msg.Proto.IsEdition2023() &&
+		f.Msg.Proto.Options.Is(f_field_presence, "IMPLICIT") &&
+		f.Type != nil && f.Type.IsEnum() && !f.Type.Enum().isOpen() {
+		return fmt.Errorf("map field %q with implicit file presence must use an open enum value", f.Name)
+	}
+	if !f.isImplicitPresence() {
+		return nil
+	}
+	if f.IsEnum() && !f.Type.Enum().isOpen() {
+		return fmt.Errorf("implicit presence enum field %q must use an open enum", f.Name)
+	}
+	if _, ok := f.Options.Get(option_default); ok {
+		return fmt.Errorf("implicit presence field %q cannot specify a default", f.Name)
+	}
+	return nil
+}
+
+// isImplicitPresence reports whether a singular scalar or enum field of an
+// edition 2023 file has features.field_presence = IMPLICIT, set on the field
+// or on the file. Such a field is a plain Go value like a proto3 field, but
+// its struct tag has no "proto3" marker to say so.
+func (f *Field) isImplicitPresence() bool {
+	if f.Msg == nil || f.Msg.Proto == nil || !f.Msg.Proto.IsEdition2023() {
+		return false
+	}
+	if f.Type == nil || f.IsMap() || f.Repeated || f.Optional || f.Oneof != nil || f.IsMessage() {
+		return false
+	}
+	s, ok := f.fieldPresence()
+	return ok && s == "IMPLICIT"
 }
 
 // GoZero returns the Go zero value for the field's type.
@@ -286,6 +340,17 @@ type noKeyTypeContext struct{ fieldContext }
 
 func (noKeyTypeContext) KeyType() parser.IKeyTypeContext { return nil }
 
+func (x *protoLoader) parseFieldOptions(c parser.IFieldOptionsContext) Options {
+	if c == nil {
+		return nil
+	}
+	var options Options
+	for _, o := range c.AllFieldOption() {
+		options = append(options, x.parseOptions(o.OptionName().GetText(), o.Constant())...)
+	}
+	return options
+}
+
 func (x *protoLoader) newField(c fieldWithKeyTypeContext) *Field {
 	ft := c.FieldType()
 	f := &Field{
@@ -306,34 +371,38 @@ func (x *protoLoader) newField(c fieldWithKeyTypeContext) *Field {
 		x.Fatalf("%s - parse field number %q err", getTokenPos(fieldn), fieldn.GetText())
 	}
 	f.FieldNumber = num
-	if oo := c.FieldOptions(); oo != nil {
-		for _, o := range oo.AllFieldOption() {
-			v, err := unmarshalConst(o.Constant().GetText())
-			if err != nil {
-				x.Fatalf("%s - field option syntax err: %s", getTokenPos(o), err)
-			}
-			f.Options = append(f.Options, &Option{Name: o.OptionName().GetText(), Value: v})
-		}
-	}
+	f.Options = x.parseFieldOptions(c.FieldOptions())
 	return f
 }
 
 func (x *protoLoader) ExitField(c *parser.FieldContext) {
+	label := c.FieldLabel()
+	if label != nil {
+		switch label.GetText() {
+		case "required":
+			if x.currentProto().Edition != editionProto2 {
+				x.Fatalf("%s - `required` keyword only available for proto2", getTokenPos(label))
+			}
+		case "optional":
+			if x.currentProto().IsEdition2023() {
+				x.Fatalf("%s - `optional` keyword is not available in editions", getTokenPos(label))
+			}
+		}
+	}
 	switch getRuleIndex(c.GetParent()) {
 	case parser.ProtobufParserRULE_extendDef: // only for protoc
+		options := x.parseFieldOptions(c.FieldOptions())
+		x.rejectFieldPresenceOption(c, options, "an extension field")
 		return
 	}
 	// fieldLabel? type_ fieldName EQ fieldNumber (LB fieldOptions RB)? SEMI
 	f := x.newField(noKeyTypeContext{c})
-	if l := c.FieldLabel(); l != nil {
-		switch l.GetText() {
+	if label != nil {
+		switch label.GetText() {
 		case "repeated":
 			f.Repeated = true
 
 		case "required":
-			if x.currentProto().Edition != editionProto2 {
-				x.Fatalf("%s - `required` keyword only available for proto2", getTokenPos(l))
-			}
 			f.Required = true
 
 		case "optional":
@@ -343,6 +412,12 @@ func (x *protoLoader) ExitField(c *parser.FieldContext) {
 	m := x.currentMsg()
 	m.Fields = append(m.Fields, f)
 	f.Msg = m
+	if m.Proto.IsEdition2023() {
+		// edition 2023 spells required as a feature
+		if s, ok := f.fieldPresence(); ok && s == "LEGACY_REQUIRED" {
+			f.Required = true
+		}
+	}
 }
 
 func (x *protoLoader) ExitOneofField(c *parser.OneofFieldContext) {

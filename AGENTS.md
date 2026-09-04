@@ -17,7 +17,8 @@
 
 ## Generated files
 
-- Regenerate tracked `internal/prutal/testdata.pb.go` with `internal/prutal/testdata.sh`.
+- Regenerate tracked `internal/prutal/testdata.pb.go` and `internal/prutal/testdata_edition2023.pb.go` with `internal/prutal/testdata.sh`.
+  The script restores their required Apache-2.0 headers after generation.
 - Regenerate the ANTLR parser only for an intentional parser upgrade, using `prutalgen/internal/update_parser.sh` with a local `antlr` executable.
 
 ## Verification

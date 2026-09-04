@@ -20,7 +20,7 @@
 package prutal
 
 type TestofNestedMessage struct {
-	Field1 bool `protobuf:"varint,1,opt,name=field1" json:"field1,omitempty"`
+	Field1 bool `protobuf:"varint,1,opt,name=field1,proto3" json:"field1,omitempty"`
 }
 
 func (x *TestofNestedMessage) Reset() { *x = TestofNestedMessage{} }
@@ -60,13 +60,13 @@ type isTestOneofMessage_OneOfFieldA interface {
 }
 
 type TestOneofMessage_Field1 struct {
-	Field1 bool `protobuf:"varint,1,opt,name=field1" json:"field1,omitempty"`
+	Field1 bool `protobuf:"varint,1,opt,name=field1,proto3,oneof" json:"field1,omitempty"`
 }
 
 func (*TestOneofMessage_Field1) isTestOneofMessage_OneOfFieldA() {}
 
 type TestOneofMessage_Field2 struct {
-	Field2 int64 `protobuf:"varint,2,opt,name=field2" json:"field2,omitempty"`
+	Field2 int64 `protobuf:"varint,2,opt,name=field2,proto3,oneof" json:"field2,omitempty"`
 }
 
 func (*TestOneofMessage_Field2) isTestOneofMessage_OneOfFieldA() {}
@@ -76,13 +76,13 @@ type isTestOneofMessage_OneOfFieldB interface {
 }
 
 type TestOneofMessage_Field3 struct {
-	Field3 int32 `protobuf:"varint,3,opt,name=field3" json:"field3,omitempty"`
+	Field3 int32 `protobuf:"varint,3,opt,name=field3,proto3,oneof" json:"field3,omitempty"`
 }
 
 func (*TestOneofMessage_Field3) isTestOneofMessage_OneOfFieldB() {}
 
 type TestOneofMessage_Field4 struct {
-	Field4 string `protobuf:"bytes,4,opt,name=field4" json:"field4,omitempty"`
+	Field4 string `protobuf:"bytes,4,opt,name=field4,proto3,oneof" json:"field4,omitempty"`
 }
 
 func (*TestOneofMessage_Field4) isTestOneofMessage_OneOfFieldB() {}
@@ -92,7 +92,7 @@ type isTestOneofMessage_OneOfFieldC interface {
 }
 
 type TestOneofMessage_Field5 struct {
-	Field5 *TestofNestedMessage `protobuf:"bytes,5,opt,name=field5" json:"field5,omitempty"`
+	Field5 *TestofNestedMessage `protobuf:"bytes,5,opt,name=field5,proto3,oneof" json:"field5,omitempty"`
 }
 
 func (*TestOneofMessage_Field5) isTestOneofMessage_OneOfFieldC() {}

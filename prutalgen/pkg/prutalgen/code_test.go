@@ -20,6 +20,7 @@ import (
 	"go/format"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -401,4 +402,375 @@ func TestFieldAndOneofGenTrackExternalPackages(t *testing.T) {
 	src = w.Bytes()
 	assert.StringContains(t, string(src), `time "time"`)
 	typeCheckSource(t, src)
+}
+
+func TestFieldStructTagPresenceMarkers(t *testing.T) {
+	jsonTag := regexp.MustCompile(` json:"[^"]*"`)
+	fieldTag := func(f *Field) string {
+		return jsonTag.ReplaceAllString(string((&GoCodeGen{}).FieldStructTag(f)), "")
+	}
+	tag := func(p *Proto, msg, field int) string { return fieldTag(p.Messages[msg].Fields[field]) }
+
+	p := loadTestProto(t, `
+syntax = "proto3";
+option go_package = "example.com/tag";
+message M {
+  int32 a = 1;
+  optional int32 b = 2;
+  repeated int32 c = 3;
+  bytes d = 4;
+  oneof k { int32 e = 5; }
+  map<string, int32> f = 6;
+}
+`)
+	assert.Equal(t, `protobuf:"varint,1,opt,name=a,proto3"`, tag(p, 0, 0))
+	assert.Equal(t, `protobuf:"varint,2,opt,name=b,proto3,oneof"`, tag(p, 0, 1))
+	assert.Equal(t, `protobuf:"varint,3,rep,packed,name=c,proto3"`, tag(p, 0, 2))
+	assert.Equal(t, `protobuf:"bytes,4,opt,name=d,proto3"`, tag(p, 0, 3))
+	assert.Equal(t, `protobuf:"varint,5,opt,name=e,proto3,oneof"`, tag(p, 0, 4))
+	assert.Equal(t, `protobuf:"bytes,6,rep,name=f,proto3" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`, tag(p, 0, 5))
+
+	p = loadTestProto(t, `
+syntax = "proto2";
+option go_package = "example.com/tag";
+message M {
+  optional bytes a = 1;
+  required int32 b = 2;
+  oneof k { int32 c = 3; }
+}
+`)
+	assert.Equal(t, `protobuf:"bytes,1,opt,name=a"`, tag(p, 0, 0))
+	assert.Equal(t, `protobuf:"varint,2,req,name=b"`, tag(p, 0, 1))
+	assert.Equal(t, `protobuf:"varint,3,opt,name=c,oneof"`, tag(p, 0, 2))
+
+	// edition 2023: presence is a feature, set on the field or on the file,
+	// in the dotted or the aggregate form
+	p = loadTestProto(t, `
+edition = "2023";
+option go_package = "example.com/tag";
+option features.field_presence = EXPLICIT;
+enum E { E_UNSPECIFIED = 0; }
+message M {
+  bytes a = 1;
+  bytes b = 2 [features.field_presence = IMPLICIT];
+  repeated bytes c = 3;
+  M d = 4 [features.field_presence = EXPLICIT];
+  bytes e = 5 [features = { field_presence: IMPLICIT }];
+  int32 f = 6 [features = { field_presence: IMPLICIT }];
+  bytes g = 7 [features.field_presence = LEGACY_REQUIRED];
+  int32 h = 8 [features.field_presence = LEGACY_REQUIRED];
+  E i = 9 [features.field_presence = IMPLICIT];
+  M j = 10 [features.field_presence = LEGACY_REQUIRED];
+}
+`)
+	assert.True(t, p.Options.Is(f_field_presence, "EXPLICIT"))
+	assert.Equal(t, `protobuf:"bytes,1,opt,name=a"`, tag(p, 0, 0))
+	assert.Equal(t, `protobuf:"bytes,2,opt,name=b,implicit"`, tag(p, 0, 1))
+	assert.Equal(t, `protobuf:"bytes,3,rep,name=c"`, tag(p, 0, 2))
+	assert.Equal(t, `protobuf:"bytes,4,opt,name=d"`, tag(p, 0, 3))
+	assert.Equal(t, `protobuf:"bytes,5,opt,name=e,implicit"`, tag(p, 0, 4))
+	assert.Equal(t, `protobuf:"varint,6,opt,name=f,implicit"`, tag(p, 0, 5))
+	assert.False(t, p.Messages[0].Fields[5].IsPointer())
+	assert.Equal(t, `protobuf:"bytes,7,req,name=g"`, tag(p, 0, 6))
+	assert.Equal(t, `protobuf:"varint,8,req,name=h"`, tag(p, 0, 7))
+	assert.True(t, p.Messages[0].Fields[7].IsPointer())
+	assert.True(t, p.Messages[0].Fields[8].isImplicitPresence())
+	assert.False(t, p.Messages[0].Fields[8].IsPointer())
+	assert.True(t, p.Messages[0].Fields[9].Required)
+	assert.True(t, p.Messages[0].Fields[9].IsPointer())
+
+	p = loadTestProto(t, `
+edition = "2023";
+option go_package = "example.com/tag";
+option features = { field_presence: IMPLICIT };
+message M {
+  bytes a = 1;
+  bytes b = 2 [features.field_presence = EXPLICIT];
+  oneof k { bytes c = 3; }
+  int32 d = 4;
+  int32 e = 5 [features = { field_presence: EXPLICIT }];
+  M f = 6;
+  int32 g = 7 [features.field_presence = EXPLICIT, default = 1];
+  repeated int32 h = 8;
+  map<string, int32> i = 9;
+  message Inner { bytes a = 1; }
+}
+`)
+	assert.Equal(t, `protobuf:"bytes,1,opt,name=a,implicit"`, tag(p, 0, 0))
+	assert.Equal(t, `protobuf:"bytes,2,opt,name=b"`, tag(p, 0, 1))
+	assert.Equal(t, `protobuf:"bytes,3,opt,name=c,oneof"`, tag(p, 0, 2))
+	assert.Equal(t, `protobuf:"varint,4,opt,name=d,implicit"`, tag(p, 0, 3))
+	assert.False(t, p.Messages[0].Fields[3].IsPointer())
+	assert.Equal(t, `protobuf:"varint,5,opt,name=e"`, tag(p, 0, 4))
+	assert.True(t, p.Messages[0].Fields[4].IsPointer())
+	assert.Equal(t, `protobuf:"bytes,6,opt,name=f"`, tag(p, 0, 5))
+	assert.False(t, p.Messages[0].Fields[5].isImplicitPresence())
+	assert.True(t, p.Messages[0].Fields[5].IsPointer())
+	assert.True(t, p.Messages[0].Fields[6].Options.Is(option_default, "1"))
+	assert.False(t, p.Messages[0].Fields[6].isImplicitPresence())
+	assert.True(t, p.Messages[0].Fields[6].IsPointer())
+	assert.False(t, p.Messages[0].Fields[7].isImplicitPresence())
+	assert.False(t, p.Messages[0].Fields[8].isImplicitPresence())
+	assert.Equal(t, `protobuf:"bytes,1,opt,name=a,implicit"`, fieldTag(p.Messages[0].Messages[0].Fields[0]))
+
+	// A file-level implicit default does not apply to repeated, oneof, or
+	// extension fields, even when their enum type is closed.
+	p = loadTestProto(t, `
+edition = "2023";
+option go_package = "example.com/tag";
+option features.field_presence = IMPLICIT;
+option features.enum_type = CLOSED;
+enum E { E_UNSPECIFIED = 0; }
+enum OpenE {
+  option features.enum_type = OPEN;
+  OPEN_E_UNSPECIFIED = 0;
+}
+message M {
+  repeated E a = 1;
+  oneof choice { E b = 2; }
+  map<string, OpenE> c = 3;
+  extensions 100 to max;
+}
+extend M { E ext = 100; }
+`)
+	assert.False(t, p.Messages[0].Fields[0].isImplicitPresence())
+	assert.False(t, p.Messages[0].Fields[1].isImplicitPresence())
+	assert.False(t, p.Messages[0].Fields[2].isImplicitPresence())
+}
+
+func TestInvalidFieldPresenceRejected(t *testing.T) {
+	tests := []struct {
+		name  string
+		proto string
+		want  string
+	}{
+		{
+			name: "proto2",
+			proto: `syntax = "proto2";
+option go_package = "example.com/tag";
+option features.field_presence = EXPLICIT;
+`,
+			want: `"features.field_presence" is only available in editions`,
+		},
+		{
+			name: "proto3 field",
+			proto: `syntax = "proto3";
+option go_package = "example.com/tag";
+message M { int32 a = 1 [features.field_presence = IMPLICIT]; }
+`,
+			want: `"features.field_presence" is only available in editions`,
+		},
+		{
+			name: "file legacy required",
+			proto: `edition = "2023";
+option go_package = "example.com/tag";
+option features.field_presence = LEGACY_REQUIRED;
+`,
+			want: `"features.field_presence" cannot default to "LEGACY_REQUIRED" on a file`,
+		},
+		{
+			name: "message",
+			proto: `edition = "2023";
+option go_package = "example.com/tag";
+message M {
+  option features.field_presence = IMPLICIT;
+  int32 a = 1;
+}
+`,
+			want: `"features.field_presence" cannot be set on a message`,
+		},
+		{
+			name: "oneof",
+			proto: `edition = "2023";
+option go_package = "example.com/tag";
+message M {
+  oneof choice {
+    option features.field_presence = EXPLICIT;
+    int32 a = 1;
+  }
+}
+`,
+			want: `"features.field_presence" cannot be set on a oneof`,
+		},
+		{
+			name: "enum",
+			proto: `edition = "2023";
+option go_package = "example.com/tag";
+enum E {
+  option features.field_presence = EXPLICIT;
+  E_UNSPECIFIED = 0;
+}
+`,
+			want: `"features.field_presence" cannot be set on an enum`,
+		},
+		{
+			name: "enum entry",
+			proto: `edition = "2023";
+option go_package = "example.com/tag";
+enum E { E_UNSPECIFIED = 0 [features.field_presence = EXPLICIT]; }
+`,
+			want: `"features.field_presence" cannot be set on an enum entry`,
+		},
+		{
+			name: "service",
+			proto: `edition = "2023";
+option go_package = "example.com/tag";
+service S { option features.field_presence = EXPLICIT; }
+`,
+			want: `"features.field_presence" cannot be set on a service`,
+		},
+		{
+			name: "RPC",
+			proto: `edition = "2023";
+option go_package = "example.com/tag";
+message M {}
+service S {
+  rpc Call(M) returns (M) { option features.field_presence = EXPLICIT; }
+}
+`,
+			want: `"features.field_presence" cannot be set on an RPC`,
+		},
+		{
+			name: "repeated field",
+			proto: `edition = "2023";
+option go_package = "example.com/tag";
+message M { repeated int32 a = 1 [features.field_presence = EXPLICIT]; }
+`,
+			want: `cannot be set on repeated field "a"`,
+		},
+		{
+			name: "map field",
+			proto: `edition = "2023";
+option go_package = "example.com/tag";
+message M { map<string, int32> a = 1 [features.field_presence = EXPLICIT]; }
+`,
+			want: `cannot be set on map field "a"`,
+		},
+		{
+			name: "oneof field",
+			proto: `edition = "2023";
+option go_package = "example.com/tag";
+message M { oneof choice { int32 a = 1 [features.field_presence = EXPLICIT]; } }
+`,
+			want: `cannot be set on oneof field "a"`,
+		},
+		{
+			name: "implicit message field",
+			proto: `edition = "2023";
+option go_package = "example.com/tag";
+message M { M a = 1 [features.field_presence = IMPLICIT]; }
+`,
+			want: `cannot use "IMPLICIT" on message field "a"`,
+		},
+		{
+			name: "extension field",
+			proto: `edition = "2023";
+option go_package = "example.com/tag";
+message M { extensions 100 to max; }
+extend M { int32 a = 100 [features = { field_presence: EXPLICIT }]; }
+`,
+			want: `"features.field_presence" cannot be set on an extension field`,
+		},
+		{
+			name: "extension range",
+			proto: `edition = "2023";
+option go_package = "example.com/tag";
+message M { extensions 100 to max [features.field_presence = EXPLICIT]; }
+`,
+			want: `"features.field_presence" cannot be set on an extension range`,
+		},
+		{
+			name: "unknown value",
+			proto: `edition = "2023";
+option go_package = "example.com/tag";
+message M { int32 a = 1 [features.field_presence = REQUIRED]; }
+`,
+			want: `unsupported value "REQUIRED"`,
+		},
+		{
+			name: "implicit closed enum from enum",
+			proto: `edition = "2023";
+option go_package = "example.com/tag";
+enum E {
+  option features.enum_type = CLOSED;
+  E_UNSPECIFIED = 0;
+}
+message M { E a = 1 [features.field_presence = IMPLICIT]; }
+`,
+			want: `implicit presence enum field "a" must use an open enum`,
+		},
+		{
+			name: "implicit closed enum from file",
+			proto: `edition = "2023";
+option go_package = "example.com/tag";
+option features = { field_presence: IMPLICIT enum_type: CLOSED };
+enum E { E_UNSPECIFIED = 0; }
+message M { E a = 1; }
+`,
+			want: `implicit presence enum field "a" must use an open enum`,
+		},
+		{
+			name: "implicit closed enum map value",
+			proto: `edition = "2023";
+option go_package = "example.com/tag";
+option features.field_presence = IMPLICIT;
+enum E {
+  option features.enum_type = CLOSED;
+  E_UNSPECIFIED = 0;
+}
+message M { map<string, E> a = 1; }
+`,
+			want: `map field "a" with implicit file presence must use an open enum value`,
+		},
+		{
+			name: "direct implicit default",
+			proto: `edition = "2023";
+option go_package = "example.com/tag";
+message M {
+  int32 a = 1 [features.field_presence = IMPLICIT, default = 1];
+}
+`,
+			want: `implicit presence field "a" cannot specify a default`,
+		},
+		{
+			name: "inherited implicit default",
+			proto: `edition = "2023";
+option go_package = "example.com/tag";
+option features.field_presence = IMPLICIT;
+message M { int32 a = 1 [default = 1]; }
+`,
+			want: `implicit presence field "a" cannot specify a default`,
+		},
+		{
+			name: "edition optional label",
+			proto: `edition = "2023";
+option go_package = "example.com/tag";
+message M { optional int32 a = 1; }
+`,
+			want: "`optional` keyword is not available in editions",
+		},
+		{
+			name: "edition extension optional label",
+			proto: `edition = "2023";
+option go_package = "example.com/tag";
+message M { extensions 100 to max; }
+extend M { optional int32 a = 100; }
+`,
+			want: "`optional` keyword is not available in editions",
+		},
+		{
+			name: "edition extension required label",
+			proto: `edition = "2023";
+option go_package = "example.com/tag";
+message M { extensions 100 to max; }
+extend M { required int32 a = 100; }
+`,
+			want: "`required` keyword only available for proto2",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			expectProtoError(t, tt.proto, tt.want)
+		})
+	}
 }

@@ -251,11 +251,9 @@ func (x *protoLoader) ExitEnumField(c *parser.EnumFieldContext) {
 	// enumValueOptions
 	if oo := c.EnumValueOptions(); oo != nil {
 		for _, o := range oo.AllEnumValueOption() {
-			v, err := unmarshalConst(o.Constant().GetText())
-			if err != nil {
-				x.Fatalf("%s - enum field option syntax err: %s", getTokenPos(o), err)
-			}
-			f.Options = append(f.Options, &Option{Name: o.OptionName().GetText(), Value: v})
+			options := x.parseOptions(o.OptionName().GetText(), o.Constant())
+			x.rejectFieldPresenceOption(o, options, "an enum entry")
+			f.Options = append(f.Options, options...)
 		}
 	}
 	f.Enum = x.enum

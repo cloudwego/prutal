@@ -148,6 +148,22 @@ func testhack() error {
 		}
 	}
 
+	{ // Test SliceHeader.Data - the encoder tells a present but empty []byte
+		// from an unset one by the data pointer, which it reads as the first
+		// word of the header without looking at the type
+		var unset []byte
+		empty := []byte{}
+		if unsafe.Offsetof(SliceHeader{}.Data) != 0 || unsafe.Sizeof(SliceHeader{}.Data) != unsafe.Sizeof(uintptr(0)) {
+			return errors.New("compatibility issue found: SliceHeader.Data is not the first word")
+		}
+		if (*SliceHeader)(unsafe.Pointer(&unset)).Data != nil {
+			return errors.New("compatibility issue found: nil slice has a data pointer")
+		}
+		if (*SliceHeader)(unsafe.Pointer(&empty)).Data == nil {
+			return errors.New("compatibility issue found: empty slice has no data pointer")
+		}
+	}
+
 	return nil
 }
 

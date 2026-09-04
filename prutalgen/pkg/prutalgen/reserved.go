@@ -130,6 +130,8 @@ func (x *protoLoader) ExitExtensions(c *parser.ExtensionsContext) {
 	if x.currentProto().IsProto3() {
 		x.Fatalf("%s - extension ranges are not allowed in proto3", getTokenPos(c))
 	}
+	options := x.parseFieldOptions(c.FieldOptions())
+	x.rejectFieldPresenceOption(c, options, "an extension range")
 	m := x.currentMsg()
 	ranges := x.parseRanges(c.Ranges(), int32(protowire.MinValidNumber), int32(protowire.MaxValidNumber),
 		m.extensionRanges, "extension range", false)

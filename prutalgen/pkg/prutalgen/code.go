@@ -411,6 +411,26 @@ func (g *GoCodeGen) FieldStructTag(f *Field) []byte {
 	b = append(b, ',')
 	b = append(b, "name="...)
 	b = append(b, f.Name...)
+
+	// presence markers, written the way protoc-gen-go does so that the
+	// runtime tells a proto3 field from a proto2 or editions one: every field
+	// of a proto3 file carries "proto3", and a proto3 optional field, which
+	// protoc implements as a synthetic oneof, carries "oneof" like a oneof
+	// member. The runtime needs this for bytes fields, whose presence is
+	// not visible in the Go type.
+	//
+	// "implicit" is prutal's own marker for an edition 2023 field without
+	// presence, which protoc-gen-go leaves indistinguishable from one with.
+	proto3 := f.Msg != nil && f.Msg.Proto != nil && f.Msg.Proto.IsProto3()
+	if proto3 {
+		b = append(b, ",proto3"...)
+	}
+	if f.Oneof != nil || f.Optional && proto3 { // in proto2, optional is the plain label
+		b = append(b, ",oneof"...)
+	}
+	if f.isImplicitPresence() {
+		b = append(b, ",implicit"...)
+	}
 	b = append(b, '"') // end of protobuf tag
 
 	// json

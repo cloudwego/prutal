@@ -224,6 +224,9 @@ func (m *Message) verify() error {
 		}
 	}
 	for _, x := range m.Fields {
+		if err := x.verifyFieldPresence(); err != nil {
+			errs = append(errs, err)
+		}
 		if m.reservedNames.Has(x.Name) {
 			errs = append(errs, fmt.Errorf("field %q uses reserved name", x.Name))
 		}

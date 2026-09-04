@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/cloudwego/prutal/prutalgen/internal/antlr"
 	"github.com/cloudwego/prutal/prutalgen/internal/parser"
 )
 
@@ -59,9 +60,12 @@ func (oo Options) Is(name string, value string) bool {
 	return ok && s == value
 }
 
-func (x *protoLoader) ExitOptionStatement(c *parser.OptionStatementContext) {
-	name := c.OptionName().GetText()
-	v, err := unmarshalConst(c.Constant().GetText())
+// parseOptions returns the option name = constant as parsed, and for the
+// aggregate form of the editions features, "features = { a: X, b: Y }", the
+// entries "features.a" and "features.b" on top, so that a feature is found by
+// its dotted name however it was spelled. Every value is verified.
+func (x *protoLoader) parseOptions(name string, c parser.IConstantContext) Options {
+	v, err := unmarshalConst(c.GetText())
 	if err != nil {
 		x.Fatalf("%s - option syntax err: %s", getTokenPos(c), err)
 	}
@@ -71,7 +75,7 @@ func (x *protoLoader) ExitOptionStatement(c *parser.OptionStatementContext) {
 	// but we will keep it for optimization cases like `[(gogoproto.nullable) = false];`
 	options := Options{{Name: name, Value: v}}
 	if name == "features" {
-		if block := c.Constant().BlockLit(); block != nil {
+		if block := c.BlockLit(); block != nil {
 			idents := block.AllIdent()
 			values := block.AllConstant()
 			for i, ident := range idents {
@@ -88,29 +92,58 @@ func (x *protoLoader) ExitOptionStatement(c *parser.OptionStatementContext) {
 		if !verifyOption(o.Name, o.Value) {
 			x.Fatalf("%s - option %q unsupported value %q", getTokenPos(c), o.Name, o.Value)
 		}
+		if o.Name == f_field_presence && !x.currentProto().IsEdition2023() {
+			x.Fatalf("%s - option %q is only available in editions", getTokenPos(c), o.Name)
+		}
 	}
+	return options
+}
+
+func (x *protoLoader) rejectFieldPresenceOption(
+	c antlr.ParserRuleContext, options Options, target string,
+) {
+	for _, o := range options {
+		if o.Name == f_field_presence {
+			x.Fatalf("%s - option %q cannot be set on %s", getTokenPos(c), o.Name, target)
+		}
+	}
+}
+
+func (x *protoLoader) ExitOptionStatement(c *parser.OptionStatementContext) {
+	options := x.parseOptions(c.OptionName().GetText(), c.Constant())
 
 	switch getRuleIndex(c.GetParent()) {
 	case parser.ProtobufParserRULE_proto:
 		p := x.currentProto()
+		for _, o := range options {
+			if o.Name == f_field_presence && o.Value == "LEGACY_REQUIRED" {
+				x.Fatalf("%s - option %q cannot default to %q on a file",
+					getTokenPos(c), o.Name, o.Value)
+			}
+		}
 		p.Options = append(p.Options, options...)
 
 	case parser.ProtobufParserRULE_messageElement:
+		x.rejectFieldPresenceOption(c, options, "a message")
 		m := x.currentMsg()
 		m.Options = append(m.Options, options...)
 
 	case parser.ProtobufParserRULE_oneof:
+		x.rejectFieldPresenceOption(c, options, "a oneof")
 		of := x.currentOneof()
 		of.Options = append(of.Options, options...)
 
 	case parser.ProtobufParserRULE_enumElement:
+		x.rejectFieldPresenceOption(c, options, "an enum")
 		x.enum.Options = append(x.enum.Options, options...)
 
 	case parser.ProtobufParserRULE_serviceElement:
+		x.rejectFieldPresenceOption(c, options, "a service")
 		s := x.currentService()
 		s.Options = append(s.Options, options...)
 
 	case parser.ProtobufParserRULE_rpc:
+		x.rejectFieldPresenceOption(c, options, "an RPC")
 		s := x.currentService()
 		rpc := last(s.Methods)
 		rpc.Options = append(rpc.Options, options...)
@@ -126,7 +159,7 @@ func verifyOption(name, v string) bool {
 		return v == "EXPANDED" || v == "PACKED"
 
 	case f_field_presence:
-		return v == "EXPLICIT" || v == "IMPLICIT"
+		return v == "EXPLICIT" || v == "IMPLICIT" || v == "LEGACY_REQUIRED"
 
 	case f_enum_type:
 		return v == "OPEN" || v == "CLOSED"
