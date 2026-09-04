@@ -169,6 +169,10 @@ func parseType(rt reflect.Type) (t *Type, err error) {
 }
 
 // TmpMapVars contains key and value tmp vars used for updating associated map for a type
+//
+// NOTE: the vars still hold the last decoded key and value after being
+// returned to the pool. Every entry overwrites both before use, so this only
+// keeps a string or a message alive until the var is reused.
 type TmpMapVars struct {
 	m reflect.Value
 

@@ -279,7 +279,7 @@ func DecodeMap_VarintU32_ZigZag32(b []byte, mp unsafe.Pointer) error {
 		return err
 	}
 	m := ensureMapNotNil[uint32, int32](mp)
-	(*m)[uint32(k)] = int32(protowire.DecodeZigZag(v))
+	(*m)[uint32(k)] = DecodeZigZag32(v)
 	return nil
 }
 
@@ -349,7 +349,7 @@ func DecodeMap_VarintU64_ZigZag32(b []byte, mp unsafe.Pointer) error {
 		return err
 	}
 	m := ensureMapNotNil[uint64, int32](mp)
-	(*m)[k] = int32(protowire.DecodeZigZag(v))
+	(*m)[k] = DecodeZigZag32(v)
 	return nil
 }
 
@@ -419,7 +419,7 @@ func DecodeMap_ZigZag64_ZigZag32(b []byte, mp unsafe.Pointer) error {
 		return err
 	}
 	m := ensureMapNotNil[int64, int32](mp)
-	(*m)[protowire.DecodeZigZag(k)] = int32(protowire.DecodeZigZag(v))
+	(*m)[protowire.DecodeZigZag(k)] = DecodeZigZag32(v)
 	return nil
 }
 
@@ -459,7 +459,7 @@ func DecodeMap_ZigZag32_VarintU64(b []byte, mp unsafe.Pointer) error {
 		return err
 	}
 	m := ensureMapNotNil[int32, uint64](mp)
-	(*m)[int32(protowire.DecodeZigZag(k))] = v
+	(*m)[DecodeZigZag32(k)] = v
 	return nil
 }
 
@@ -469,7 +469,7 @@ func DecodeMap_ZigZag32_VarintU32(b []byte, mp unsafe.Pointer) error {
 		return err
 	}
 	m := ensureMapNotNil[int32, uint32](mp)
-	(*m)[int32(protowire.DecodeZigZag(k))] = uint32(v)
+	(*m)[DecodeZigZag32(k)] = uint32(v)
 	return nil
 }
 
@@ -479,7 +479,7 @@ func DecodeMap_ZigZag32_ZigZag64(b []byte, mp unsafe.Pointer) error {
 		return err
 	}
 	m := ensureMapNotNil[int32, int64](mp)
-	(*m)[int32(protowire.DecodeZigZag(k))] = protowire.DecodeZigZag(v)
+	(*m)[DecodeZigZag32(k)] = protowire.DecodeZigZag(v)
 	return nil
 }
 
@@ -489,7 +489,7 @@ func DecodeMap_ZigZag32_ZigZag32(b []byte, mp unsafe.Pointer) error {
 		return err
 	}
 	m := ensureMapNotNil[int32, int32](mp)
-	(*m)[int32(protowire.DecodeZigZag(k))] = int32(protowire.DecodeZigZag(v))
+	(*m)[DecodeZigZag32(k)] = DecodeZigZag32(v)
 	return nil
 }
 
@@ -499,7 +499,7 @@ func DecodeMap_ZigZag32_Fixed64(b []byte, mp unsafe.Pointer) error {
 		return err
 	}
 	m := ensureMapNotNil[int32, uint64](mp)
-	(*m)[int32(protowire.DecodeZigZag(k))] = v
+	(*m)[DecodeZigZag32(k)] = v
 	return nil
 }
 
@@ -509,7 +509,7 @@ func DecodeMap_ZigZag32_Fixed32(b []byte, mp unsafe.Pointer) error {
 		return err
 	}
 	m := ensureMapNotNil[int32, uint32](mp)
-	(*m)[int32(protowire.DecodeZigZag(k))] = uint32(v)
+	(*m)[DecodeZigZag32(k)] = uint32(v)
 	return nil
 }
 
@@ -519,7 +519,7 @@ func DecodeMap_ZigZag32_Bool(b []byte, mp unsafe.Pointer) error {
 		return err
 	}
 	m := ensureMapNotNil[int32, bool](mp)
-	(*m)[int32(protowire.DecodeZigZag(k))] = v != 0
+	(*m)[DecodeZigZag32(k)] = v != 0
 	return nil
 }
 
@@ -559,7 +559,7 @@ func DecodeMap_Fixed64_ZigZag32(b []byte, mp unsafe.Pointer) error {
 		return err
 	}
 	m := ensureMapNotNil[uint64, int32](mp)
-	(*m)[k] = int32(protowire.DecodeZigZag(v))
+	(*m)[k] = DecodeZigZag32(v)
 	return nil
 }
 
@@ -630,7 +630,7 @@ func DecodeMap_Fixed32_ZigZag32(b []byte, mp unsafe.Pointer) error {
 		return err
 	}
 	m := ensureMapNotNil[uint32, int32](mp)
-	(*m)[uint32(k)] = int32(protowire.DecodeZigZag(v))
+	(*m)[uint32(k)] = DecodeZigZag32(v)
 	return nil
 }
 
@@ -701,7 +701,7 @@ func DecodeMap_Bool_ZigZag32(b []byte, mp unsafe.Pointer) error {
 		return err
 	}
 	m := ensureMapNotNil[bool, int32](mp)
-	(*m)[k != 0] = int32(protowire.DecodeZigZag(v))
+	(*m)[k != 0] = DecodeZigZag32(v)
 	return nil
 }
 

@@ -107,6 +107,11 @@ func (d *Decoder) DecodeStruct(b []byte, base unsafe.Pointer, s *desc.StructDesc
 
 	for i < len(b) {
 		// next field tag
+		//
+		// NOTE: unlike wire.ConsumeMapEntryTag and the reference
+		// implementation, this accepts a field number past
+		// protowire.MaxValidNumber and keeps it as an unknown field instead of
+		// rejecting the message.
 		num, typ, n := protowire.ConsumeTag(b[i:])
 		if n < 0 {
 			return 0, protowire.ParseError(n)
@@ -199,7 +204,10 @@ func (d *Decoder) DecodeStruct(b []byte, base unsafe.Pointer, s *desc.StructDesc
 			if n < 0 {
 				return 0, protowire.ParseError(n)
 			}
-			if tag == desc.TypeZigZag32 || tag == desc.TypeZigZag64 {
+			switch tag {
+			case desc.TypeZigZag32:
+				u64 = uint64(wire.DecodeZigZag32(u64))
+			case desc.TypeZigZag64:
 				u64 = uint64(protowire.DecodeZigZag(u64))
 			}
 			switch t.Kind {
@@ -211,8 +219,8 @@ func (d *Decoder) DecodeStruct(b []byte, base unsafe.Pointer, s *desc.StructDesc
 				*(*int64)(p) = int64(u64)
 			case reflect.Uint64:
 				*(*uint64)(p) = u64
-			case reflect.Bool: // 1 for true, 0 for false
-				*(*byte)(p) = byte(u64 & 0x1)
+			case reflect.Bool: // any non-zero varint is true
+				*(*bool)(p) = u64 != 0
 			}
 			i += n
 
@@ -335,7 +343,10 @@ func (d *Decoder) decodeMapKey(b []byte, p unsafe.Pointer, f *desc.FieldDesc) (i
 		if n < 0 {
 			return 0, protowire.ParseError(n)
 		}
-		if tag == desc.TypeZigZag32 || tag == desc.TypeZigZag64 {
+		switch tag {
+		case desc.TypeZigZag32:
+			u64 = uint64(wire.DecodeZigZag32(u64))
+		case desc.TypeZigZag64:
 			u64 = uint64(protowire.DecodeZigZag(u64))
 		}
 		switch t.Kind {
@@ -347,8 +358,8 @@ func (d *Decoder) decodeMapKey(b []byte, p unsafe.Pointer, f *desc.FieldDesc) (i
 			*(*int64)(p) = int64(u64)
 		case reflect.Uint64:
 			*(*uint64)(p) = u64
-		case reflect.Bool: // 1 for true, 0 for false
-			*(*byte)(p) = byte(u64 & 0x1)
+		case reflect.Bool: // any non-zero varint is true
+			*(*bool)(p) = u64 != 0
 		}
 		return n, nil
 
@@ -422,7 +433,10 @@ func (d *Decoder) decodeMapValue(b []byte, p unsafe.Pointer, f *desc.FieldDesc, 
 		if n < 0 {
 			return 0, protowire.ParseError(n)
 		}
-		if tag == desc.TypeZigZag32 || tag == desc.TypeZigZag64 {
+		switch tag {
+		case desc.TypeZigZag32:
+			u64 = uint64(wire.DecodeZigZag32(u64))
+		case desc.TypeZigZag64:
 			u64 = uint64(protowire.DecodeZigZag(u64))
 		}
 		switch t.Kind {
@@ -434,8 +448,8 @@ func (d *Decoder) decodeMapValue(b []byte, p unsafe.Pointer, f *desc.FieldDesc, 
 			*(*int64)(p) = int64(u64)
 		case reflect.Uint64:
 			*(*uint64)(p) = u64
-		case reflect.Bool: // 1 for true, 0 for false
-			*(*byte)(p) = byte(u64 & 0x1)
+		case reflect.Bool: // any non-zero varint is true
+			*(*bool)(p) = u64 != 0
 		}
 		return n, nil
 

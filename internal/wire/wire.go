@@ -18,6 +18,7 @@ package wire
 
 import (
 	"errors"
+	"math"
 
 	"github.com/cloudwego/prutal/internal/protowire"
 )
@@ -39,6 +40,15 @@ const (
 	MapKeyFieldNum = 1
 	MapValFieldNum = 2
 )
+
+// DecodeZigZag32 decodes a zigzag encoded sint32.
+//
+// A sint32 takes the low 32 bits of its varint, so the value must be narrowed
+// before it is zigzag decoded: decoding the full varint first and narrowing
+// the result afterwards yields a different number.
+func DecodeZigZag32(v uint64) int32 {
+	return int32(protowire.DecodeZigZag(v & math.MaxUint32))
+}
 
 var errFieldNumber = errors.New("invalid field number")
 

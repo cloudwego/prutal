@@ -160,7 +160,7 @@ func DecodePackedZigZag32(b []byte, h unsafe.Pointer) error {
 		if n < 0 {
 			return io.ErrUnexpectedEOF
 		}
-		vv = append(vv, int32(protowire.DecodeZigZag(v)))
+		vv = append(vv, DecodeZigZag32(v))
 		b = b[n:]
 	}
 	setPacked(h, vv)
