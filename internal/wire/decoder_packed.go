@@ -198,29 +198,31 @@ func DecodePackedFixed32(b []byte, h unsafe.Pointer) error {
 }
 
 func DecodePackedBool(b []byte, h unsafe.Pointer) error {
-	sz := 0
-	for _, v := range b {
-		if v < 0x80 {
-			sz++
+	// Every known encoder writes a bool as a single byte, so the run maps onto
+	// the slice byte for byte. Over-long varints are legal too; the first one
+	// hands the rest of the run to the general decoder, keeping what was
+	// decoded so far. cap(vv) covers the general case as well: a varint never
+	// decodes to more bools than it has bytes.
+	vv := make([]bool, len(b))
+	for i, c := range b {
+		if c >= 0x80 {
+			return decodePackedBoolSlow(b[i:], h, vv[:i])
 		}
+		vv[i] = c != 0 // bools are varints on the wire, not bytes
 	}
-	vv := make([]bool, 0, sz)
+	setPacked(h, vv)
+	return nil
+}
+
+// decodePackedBoolSlow finishes a packed bool run that contains over-long
+// varints. vv holds the bools decoded before b, with room for the rest.
+func decodePackedBoolSlow(b []byte, h unsafe.Pointer, vv []bool) error {
 	for len(b) > 0 {
-		var v uint64
-		var n int
-		if len(b) >= 1 && b[0] < 0x80 {
-			v = uint64(b[0])
-			n = 1
-		} else if len(b) >= 2 && b[1] < 0x80 {
-			v = uint64(b[0]&0x7f) + uint64(b[1])<<7
-			n = 2
-		} else {
-			v, n = protowire.ConsumeVarint(b)
-		}
+		v, n := protowire.ConsumeVarint(b)
 		if n < 0 {
 			return io.ErrUnexpectedEOF
 		}
-		vv = append(vv, v != 0) // bools are varints on the wire, not bytes
+		vv = append(vv, v != 0)
 		b = b[n:]
 	}
 	setPacked(h, vv)

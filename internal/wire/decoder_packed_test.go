@@ -121,4 +121,13 @@ func TestDecodePackedBool_Varints(t *testing.T) {
 	vv := []bool{}
 	assert.NoError(t, DecodePackedBool([]byte{0x80, 0x00, 0x82, 0x00}, unsafe.Pointer(&vv)))
 	assert.SliceEqual(t, []bool{false, true}, vv)
+
+	// an over-long varint in the middle of a canonical run must keep what
+	// came before it and decode what follows
+	vv = []bool{}
+	assert.NoError(t, DecodePackedBool([]byte{1, 0, 2, 0x81, 0x00, 1, 0}, unsafe.Pointer(&vv)))
+	assert.SliceEqual(t, []bool{true, false, true, true, true, false}, vv)
+
+	vv = []bool{}
+	assert.ErrorContains(t, DecodePackedBool([]byte{1, 0x80}, unsafe.Pointer(&vv)), "unexpected EOF")
 }
