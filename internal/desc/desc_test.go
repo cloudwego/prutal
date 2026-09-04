@@ -856,3 +856,43 @@ func TestParseStructTagDefaultWithComma(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, d.GetField(3) != nil, "field must keep number 3")
 }
+
+type zeroKindMessage struct {
+	I64   int64           `protobuf:"varint,1,opt"`
+	I32   int32           `protobuf:"varint,2,opt"`
+	B     bool            `protobuf:"varint,3,opt"`
+	S     string          `protobuf:"bytes,4,opt"`
+	Bytes []byte          `protobuf:"bytes,5,opt"`
+	List  []int32         `protobuf:"varint,6,rep,packed"`
+	M     map[int32]int32 `protobuf:"bytes,7,rep" protobuf_key:"varint,1,opt" protobuf_val:"varint,2,opt"`
+	Ptr   *TestMessage    `protobuf:"bytes,8,opt"`
+	F32   float32         `protobuf:"fixed32,9,opt"`
+	F64   float64         `protobuf:"fixed64,10,opt"`
+}
+
+// The encoder and sizer skip zero values by the kind resolved here; a wrong
+// kind either drops a set field or serializes an unset one.
+func TestZeroKind(t *testing.T) {
+	sd, err := GetOrParse(reflect.ValueOf(&zeroKindMessage{}))
+	assert.NoError(t, err)
+
+	ptr := ZeroKindU64 // pointers and maps are tested by their word
+	if unsafe.Sizeof(uintptr(0)) == 4 {
+		ptr = ZeroKindU32
+	}
+	want := map[string]ZeroKind{
+		"I64": ZeroKindU64, "I32": ZeroKindU32, "B": ZeroKindU8,
+		"S": ZeroKindLen, "Bytes": ZeroKindLen, "List": ZeroKindLen,
+		"M": ptr, "Ptr": ptr, "F32": ZeroKindU32, "F64": ZeroKindU64,
+	}
+	assert.Equal(t, len(want), len(sd.Fields))
+	for _, f := range sd.Fields {
+		assert.Equal(t, want[f.Name], f.ZeroKind, f.Name)
+	}
+
+	// a set oneof member is serialized even when zero, so it is never skipped
+	sd, err = GetOrParse(reflect.ValueOf(&TestOneofMessage{}))
+	assert.NoError(t, err)
+	assert.Equal(t, ZeroKindU32, sd.Fields[0].ZeroKind)
+	assert.Equal(t, ZeroKindNone, sd.Fields[1].ZeroKind)
+}

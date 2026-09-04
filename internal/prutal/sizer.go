@@ -48,22 +48,23 @@ func SizeStruct(base unsafe.Pointer, s *desc.StructDesc, maxdepth int) (int, err
 			p = data
 		}
 
-		// skip zero values — same logic as encoder
-		skipzero := false
-		switch {
-		case t.SliceLike: // for slice or string, both can use StringHeader
-			// must be checked before t.Size, see the comment in encoder.go
-			skipzero = ((*hack.StringHeader)(p)).Len == 0
-		case t.Size == 8:
-			skipzero = *(*uint64)(p) == 0
-		case t.Size == 4:
-			skipzero = *(*uint32)(p) == 0
-		case t.Size == 1:
-			skipzero = *(*uint8)(p) == 0
-		}
-		// a set oneof member must be serialized even with a zero value
-		if skipzero && !f.IsOneof() {
-			continue
+		// skip zero values, same logic and order as the encoder
+		if k := f.ZeroKind; k == desc.ZeroKindU64 {
+			if *(*uint64)(p) == 0 {
+				continue
+			}
+		} else if k == desc.ZeroKindU32 {
+			if *(*uint32)(p) == 0 {
+				continue
+			}
+		} else if k == desc.ZeroKindLen { // slice or string, both can use StringHeader
+			if ((*hack.StringHeader)(p)).Len == 0 {
+				continue
+			}
+		} else if k == desc.ZeroKindU8 {
+			if *(*uint8)(p) == 0 {
+				continue
+			}
 		}
 
 		if t.IsPointer {

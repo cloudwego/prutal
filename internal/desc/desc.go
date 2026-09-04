@@ -154,6 +154,22 @@ var wireTypes = []wire.Type{
 	TypeBytes:    wire.TypeBytes,
 }
 
+// ZeroKind tells the encoder and sizer how to test a field for its zero
+// value, so that the hot loop needs no type dispatch of its own. It is
+// resolved once, when the field is finalized.
+type ZeroKind uint8
+
+const (
+	// ZeroKindNone marks a field that is never skipped: a set oneof member is
+	// serialized even when it holds a zero value, otherwise the chosen case
+	// would be lost on round-trip. Types without a cheap test end up here too.
+	ZeroKindNone ZeroKind = iota
+	ZeroKindU64           // int64, uint64, float64, or a pointer or map on 64-bit
+	ZeroKindU32           // int32, uint32, float32, or a pointer or map on 32-bit
+	ZeroKindU8            // bool
+	ZeroKindLen           // string, []byte or slice: zero when the header Len is 0
+)
+
 type FieldDesc struct {
 	ID       int32
 	Name     string
@@ -164,6 +180,7 @@ type FieldDesc struct {
 	Packed   bool
 	IsList   bool
 	IsMap    bool
+	ZeroKind ZeroKind
 
 	TagType TagType
 	WireTag uint64 //  wire.EncodeTag(f.ID, wireType)
@@ -246,6 +263,7 @@ func (f *FieldDesc) finalizeField() (err error) {
 	if err = f.checkTypeMatch(); err != nil {
 		return
 	}
+	f.ZeroKind = zeroKindOf(f)
 	f.WireTagSize = wire.SizeVarint(f.WireTag)
 	f.AppendFunc = getAppendFunc(f.TagType, t.RealKind(), f.Packed)
 	f.SizeFunc = getSizeFunc(f.TagType, t.RealKind())
@@ -264,6 +282,27 @@ func (f *FieldDesc) finalizeField() (err error) {
 	}
 	f.DecodeFunc = getDecodeFunc(f)
 	return
+}
+
+// zeroKindOf resolves how the encoder and sizer test f for its zero value.
+func zeroKindOf(f *FieldDesc) ZeroKind {
+	t := f.T
+	switch {
+	case f.IsOneof():
+		return ZeroKindNone
+	case t.SliceLike:
+		// checked before the sizes: on 386 a string header is 8 bytes and
+		// "" has a non-nil data pointer, so a size-based test would treat
+		// an empty string as non-zero
+		return ZeroKindLen
+	case t.Size == 8:
+		return ZeroKindU64
+	case t.Size == 4:
+		return ZeroKindU32
+	case t.Size == 1:
+		return ZeroKindU8
+	}
+	return ZeroKindNone
 }
 
 func (f *FieldDesc) checkTypeMatch() error {
