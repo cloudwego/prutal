@@ -165,11 +165,9 @@ func (d *Decoder) DecodeStruct(b []byte, base unsafe.Pointer, s *desc.StructDesc
 
 		if f.Repeated && t.IsSlice {
 			t = t.V
-			if typ == wire.TypeBytes && f.Packed {
-				// packed repeated fields, only scalar types except string or bytes
-				if f.DecodeFunc == nil {
-					panic(fmt.Sprintf("BUG? unknown packed field %q (#%d)", f.Name, f.ID))
-				}
+			if typ == wire.TypeBytes && f.DecodeFunc != nil {
+				// packed input, which a packable field may arrive in whatever
+				// it declares: the wire format allows either form
 				packed, n := protowire.ConsumeBytes(b[i:])
 				if n < 0 {
 					return i, protowire.ParseError(n)

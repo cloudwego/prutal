@@ -65,11 +65,13 @@ func getDecodeFunc(f *FieldDesc) wire.DecodeFunc {
 		// Returns nil for maps with complex types (e.g., struct values, nested maps)
 		return getMapDecodeFunc(f)
 	}
-	if f.Packed {
-		// Returns optimized decoder for packed repeated scalar fields
+	if f.Repeated && f.T.IsSlice {
+		// the packed decoder, nil for elements that cannot be packed. Every
+		// packable field gets one whatever it declares: the wire format
+		// allows either form on input, only the encoder follows the tag.
 		return getPackedDecodeFunc(f)
 	}
-	// Non-packed, non-map fields use generic decoding
+	// Non-map singular fields use generic decoding
 	return nil
 }
 

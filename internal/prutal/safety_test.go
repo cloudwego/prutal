@@ -136,6 +136,43 @@ func TestPackedAndUnpackedMixDecode(t *testing.T) {
 	assert.SliceEqual(t, []uint64{5, 1, 2}, v.F)
 }
 
+// A packable field takes packed input even when declared unpacked, and
+// unpacked input when declared packed: the wire format allows either form,
+// only the encoder follows the declaration.
+func TestPackedEitherWayDecode(t *testing.T) {
+	var v struct {
+		U []uint64  `protobuf:"varint,1,rep"`
+		B []bool    `protobuf:"varint,2,rep"`
+		F []float32 `protobuf:"fixed32,3,rep"`
+		P []int32   `protobuf:"varint,4,rep,packed"`
+		S [][]byte  `protobuf:"bytes,5,rep"`
+	}
+	b := []byte{
+		0x0a, 0x02, 0x01, 0x02, // U packed [1, 2]
+		0x12, 0x01, 0x01, // B packed [true]
+		0x1a, 0x04, 0x00, 0x00, 0x80, 0x3f, // F packed [1.0]
+		0x20, 0x07, // P unpacked [7]
+		0x2a, 0x01, 0x41, // S element "A": LEN is its own wire type
+	}
+	assert.NoError(t, Unmarshal(b, &v))
+	assert.SliceEqual(t, []uint64{1, 2}, v.U)
+	assert.SliceEqual(t, []bool{true}, v.B)
+	assert.SliceEqual(t, []float32{1}, v.F)
+	assert.SliceEqual(t, []int32{7}, v.P)
+	assert.Equal(t, 1, len(v.S))
+	assert.BytesEqual(t, []byte("A"), v.S[0])
+
+	out, err := MarshalAppend(nil, &v)
+	assert.NoError(t, err)
+	assert.BytesEqual(t, []byte{
+		0x08, 0x01, 0x08, 0x02, // U unpacked
+		0x10, 0x01, // B unpacked
+		0x1d, 0x00, 0x00, 0x80, 0x3f, // F unpacked
+		0x22, 0x01, 0x07, // P packed
+		0x2a, 0x01, 0x41, // S
+	}, out)
+}
+
 // Map nesting must cost one recursion level on both the encode and decode
 // sides. The pre-fix decoder consumed two levels per map hop, so messages
 // deeper than half the budget passed Marshal but failed Unmarshal.

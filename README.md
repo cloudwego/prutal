@@ -58,7 +58,7 @@ Prutal aims to minimize code generation as much as possible while ensuring seria
 * ✅ Map fields
 * ✅ Oneof fields
 * ✅ Required fields (proto2)
-* ✅ Packed / unpacked encoding
+* ✅ Packed / unpacked encoding: written as declared, both forms are accepted on decode
     - PACKED / EXPANDED (repeated field encoding, edition 2023)
 * ✅ Unknown field preservation
 * ✅ Reserved fields and names

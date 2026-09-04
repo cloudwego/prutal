@@ -234,7 +234,7 @@ type FieldDesc struct {
 
 	SizeMapFunc wire.SizeMapFunc
 
-	// only for packed types, and some map types
+	// only for packable repeated types, and some map types
 	DecodeFunc func(b []byte, p unsafe.Pointer) error
 
 	T *Type
