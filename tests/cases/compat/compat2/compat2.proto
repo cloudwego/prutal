@@ -1,0 +1,77 @@
+syntax = "proto2";
+package compat2;
+option go_package = "./compat2";
+
+enum Level {
+  LOW = 0;
+  MID = 5;
+  HIGH = 10;
+}
+
+message Defaults {
+  optional int32 i32 = 1 [default = -42];
+  optional int64 i64 = 2 [default = 1234567890123];
+  optional uint32 u32 = 3 [default = 42];
+  optional uint64 u64 = 4 [default = 9876543210];
+  optional sint32 s32 = 5 [default = -7];
+  optional sint64 s64 = 6 [default = -8];
+  optional fixed32 f32 = 7 [default = 9];
+  optional fixed64 f64 = 8 [default = 10];
+  optional sfixed32 sf32 = 9 [default = -11];
+  optional sfixed64 sf64 = 10 [default = -12];
+  optional float fl = 11 [default = 1.5];
+  optional double db = 12 [default = -2.5];
+  optional bool b = 13 [default = true];
+  optional string s = 14 [default = "hello, world"];
+  optional bytes by = 15 [default = "a,b\000c"];
+  optional Level level = 16 [default = HIGH];
+  optional float inf = 17 [default = inf];
+  optional double nan = 18 [default = nan];
+}
+
+message Proto2Message {
+  optional int32 opt_i32 = 1;
+  optional string opt_s = 2;
+  optional bytes opt_by = 3;
+  optional Level opt_level = 4;
+  optional Proto2Message opt_msg = 5;
+  required int32 req_i32 = 6;
+  required string req_s = 7;
+  required Defaults req_msg = 8;
+  repeated int32 rep_i32 = 9;
+  repeated int32 rep_packed_i32 = 10 [packed = true];
+  repeated Level rep_level = 11;
+  repeated Level rep_packed_level = 12 [packed = true];
+  repeated string rep_s = 13;
+  repeated Proto2Message rep_msg = 14;
+  map<string, Proto2Message> map_msg = 15;
+  map<int32, Level> map_level = 16;
+  oneof choice {
+    int32 c_i32 = 17;
+    string c_s = 18;
+    Proto2Message c_msg = 19;
+    Level c_level = 20;
+  }
+  extensions 100 to 199;
+}
+
+extend Proto2Message {
+  optional int32 ext_i32 = 100;
+  optional string ext_s = 101;
+  repeated int64 ext_rep = 102;
+  optional Defaults ext_msg = 103;
+}
+
+message WithGroup {
+  optional int32 before = 1;
+  optional group MyGroup = 2 {
+    optional int32 a = 1;
+    optional string b = 2;
+  }
+  optional int32 after = 3;
+}
+
+message NoGroupSibling {
+  optional int32 v = 1;
+  optional WithGroup g = 2;
+}

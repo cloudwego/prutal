@@ -38,6 +38,7 @@ output/*
 
 # generated test files
 tests/bin
+tests/include
 tests/**/*.pb.go
 
 

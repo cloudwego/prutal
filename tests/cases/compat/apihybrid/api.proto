@@ -1,0 +1,11 @@
+edition = "2023";
+package apihybrid;
+option go_package = "./apihybrid";
+message Msg {
+  int32 a = 1;
+  string s = 2;
+  Msg sub = 3;
+  repeated int32 list = 4;
+  map<string, int32> m = 5;
+  oneof o { int32 x = 6; string y = 7; }
+}

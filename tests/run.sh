@@ -8,8 +8,11 @@ YELLOW='\033[33m'
 RESET='\033[0m'
 
 PATH_BIN=$PWD/bin
+# protoc looks for the well-known type imports in ../include next to its
+# binary, so the include dir of the release is kept beside bin
+PATH_INCLUDE=$PWD/include
 export PATH=${PATH_BIN}:$PATH
-mkdir -p $PATH_BIN
+mkdir -p "$PATH_BIN"
 
 echo "building prutalgen ..."
 cd ../prutalgen
@@ -20,7 +23,13 @@ echo -e "building prutalgen ... ${GREEN}done${RESET}"
 
 echo "installing protoc ... "
 PROTOC_VERSION=v29.3
-if [[ ! -f "${PATH_BIN}/protoc" ]]; then
+PROTOC_VERSION_OUTPUT="libprotoc ${PROTOC_VERSION#v}"
+PROTOC_VERSION_FILE="${PATH_INCLUDE}/.protoc-version"
+if [[ ! -x "${PATH_BIN}/protoc" ||
+      ! -d "${PATH_INCLUDE}/google/protobuf" ||
+      ! -f "${PROTOC_VERSION_FILE}" ||
+      "$("${PATH_BIN}/protoc" --version 2>/dev/null)" != "${PROTOC_VERSION_OUTPUT}" ||
+      "$(<"${PROTOC_VERSION_FILE}")" != "${PROTOC_VERSION}" ]]; then
   mkdir -p tmp
   cd tmp
   os=`uname -s | sed 's/Darwin/osx/'`
@@ -28,32 +37,52 @@ if [[ ! -f "${PATH_BIN}/protoc" ]]; then
   suffix="${os}-${arch}"
   filename=protoc-${PROTOC_VERSION#v}-${suffix}.zip
   url=https://github.com/protocolbuffers/protobuf/releases/download/${PROTOC_VERSION}/${filename}
-  rm -f $filename
-  wget -q $url
-  unzip -o -q $filename -d ./
-  mv ./bin/protoc $PATH_BIN
+  rm -f "$filename"
+  rm -rf ./bin ./include
+  wget -q "$url"
+  unzip -o -q "$filename" -d ./
+  if [[ "$(./bin/protoc --version)" != "${PROTOC_VERSION_OUTPUT}" ||
+        ! -d ./include/google/protobuf ]]; then
+    echo -e "${RED}downloaded protoc release is incomplete or has the wrong version${RESET}"
+    exit 1
+  fi
+  rm -rf "$PATH_INCLUDE"
+  mv ./include "$PATH_INCLUDE"
+  mv -f ./bin/protoc "${PATH_BIN}/protoc"
+  printf '%s\n' "$PROTOC_VERSION" > "$PROTOC_VERSION_FILE"
   cd - >/dev/null
   rm -rf ./tmp/
   echo -e "installing protoc ... ${GREEN}done${RESET}"
 fi
 
+# the generators are pinned: their output is what the cases test against,
+# and protoc-gen-go must match the protobuf runtime in go.mod
 echo "installing protoc-gen-go ..."
-go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+PROTOC_GEN_GO_VERSION=$(go list -m -f '{{.Version}}' google.golang.org/protobuf)
+GOBIN="$PATH_BIN" go install "google.golang.org/protobuf/cmd/protoc-gen-go@${PROTOC_GEN_GO_VERSION}"
 echo -e "installing protoc-gen-go ... ${GREEN}done${RESET}"
 
 echo "installing protoc-gen-go-grpc ..."
-go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+GOBIN="$PATH_BIN" go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.2
 echo -e "installing protoc-gen-go-grpc ... ${GREEN}done${RESET}"
 
-echo -ne "installed: ${GREEN}"
-which protoc 
-echo -ne "${RESET}"
-protoc --version
+# Forget any executable locations cached by the shell before using the pins.
+hash -r
 
 echo -ne "installed: ${GREEN}"
-which protoc-gen-go-grpc
+echo "${PATH_BIN}/protoc"
 echo -ne "${RESET}"
-protoc-gen-go-grpc --version
+"${PATH_BIN}/protoc" --version
+
+echo -ne "installed: ${GREEN}"
+echo "${PATH_BIN}/protoc-gen-go"
+echo -ne "${RESET}"
+"${PATH_BIN}/protoc-gen-go" --version
+
+echo -ne "installed: ${GREEN}"
+echo "${PATH_BIN}/protoc-gen-go-grpc"
+echo -ne "${RESET}"
+"${PATH_BIN}/protoc-gen-go-grpc" --version
 
 echo -ne "installed: ${GREEN}"
 which prutalgen

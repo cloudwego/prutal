@@ -1,0 +1,200 @@
+syntax = "proto3";
+package compat;
+option go_package = "./compat";
+
+import "google/protobuf/any.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+enum Color {
+  option allow_alias = true;
+  COLOR_UNSPECIFIED = 0;
+  RED = 1;
+  GREEN = 2;
+  BLUE = 3;
+  AZURE = 3;
+  BIG = 1000000;
+  NEG = -1;
+}
+
+message Scalars {
+  int32 i32 = 1;
+  int64 i64 = 2;
+  uint32 u32 = 3;
+  uint64 u64 = 4;
+  sint32 s32 = 5;
+  sint64 s64 = 6;
+  fixed32 f32 = 7;
+  fixed64 f64 = 8;
+  sfixed32 sf32 = 9;
+  sfixed64 sf64 = 10;
+  float fl = 11;
+  double db = 12;
+  bool b = 13;
+  string s = 14;
+  bytes by = 15;
+  Color color = 16;
+  reserved 17, 18;
+  reserved "old";
+  int32 json_named = 19 [json_name = "jsonNamed"];
+  int32 deprecated_field = 20 [deprecated = true];
+  int64 huge_number = 536870911;
+  int32 after_thousand = 1001;
+  int32 far_after_thousand = 100000;
+}
+
+message Optionals {
+  optional int32 i32 = 1;
+  optional int64 i64 = 2;
+  optional uint32 u32 = 3;
+  optional uint64 u64 = 4;
+  optional sint32 s32 = 5;
+  optional sint64 s64 = 6;
+  optional fixed32 f32 = 7;
+  optional fixed64 f64 = 8;
+  optional sfixed32 sf32 = 9;
+  optional sfixed64 sf64 = 10;
+  optional float fl = 11;
+  optional double db = 12;
+  optional bool b = 13;
+  optional string s = 14;
+  optional bytes by = 15;
+  optional Color color = 16;
+  optional Scalars msg = 17;
+}
+
+message Repeateds {
+  repeated int32 i32 = 1;
+  repeated int64 i64 = 2;
+  repeated uint32 u32 = 3;
+  repeated uint64 u64 = 4;
+  repeated sint32 s32 = 5;
+  repeated sint64 s64 = 6;
+  repeated fixed32 f32 = 7;
+  repeated fixed64 f64 = 8;
+  repeated sfixed32 sf32 = 9;
+  repeated sfixed64 sf64 = 10;
+  repeated float fl = 11;
+  repeated double db = 12;
+  repeated bool b = 13;
+  repeated string s = 14;
+  repeated bytes by = 15;
+  repeated Color color = 16;
+  repeated Scalars msg = 17;
+  repeated int32 unpacked_i32 = 18 [packed = false];
+  repeated Color unpacked_color = 19 [packed = false];
+  repeated double unpacked_db = 20 [packed = false];
+  repeated bool unpacked_b = 21 [packed = false];
+}
+
+message Maps {
+  map<int32, int32> i32_i32 = 1;
+  map<int64, int64> i64_i64 = 2;
+  map<uint32, uint32> u32_u32 = 3;
+  map<uint64, uint64> u64_u64 = 4;
+  map<sint32, sint32> s32_s32 = 5;
+  map<sint64, sint64> s64_s64 = 6;
+  map<fixed32, fixed32> f32_f32 = 7;
+  map<fixed64, fixed64> f64_f64 = 8;
+  map<sfixed32, sfixed32> sf32_sf32 = 9;
+  map<sfixed64, sfixed64> sf64_sf64 = 10;
+  map<bool, bool> b_b = 11;
+  map<string, string> s_s = 12;
+  map<string, bytes> s_by = 13;
+  map<string, float> s_fl = 14;
+  map<string, double> s_db = 15;
+  map<string, Color> s_color = 16;
+  map<string, Scalars> s_msg = 17;
+  map<int32, Scalars> i32_msg = 18;
+  map<int64, string> i64_s = 19;
+  map<uint64, bytes> u64_by = 20;
+  map<bool, Scalars> b_msg = 21;
+  map<string, Maps> s_maps = 22;
+  map<sint64, Color> s64_color = 23;
+  map<fixed64, Scalars> f64_msg = 24;
+}
+
+message Oneofs {
+  oneof kind {
+    int32 i32 = 1;
+    int64 i64 = 2;
+    uint32 u32 = 3;
+    uint64 u64 = 4;
+    sint32 s32 = 5;
+    sint64 s64 = 6;
+    fixed32 f32 = 7;
+    fixed64 f64 = 8;
+    sfixed32 sf32 = 9;
+    sfixed64 sf64 = 10;
+    float fl = 11;
+    double db = 12;
+    bool b = 13;
+    string s = 14;
+    bytes by = 15;
+    Color color = 16;
+    Scalars msg = 17;
+    Oneofs self = 18;
+    google.protobuf.Timestamp ts = 19;
+  }
+  oneof second {
+    string s2 = 21;
+    Scalars msg2 = 22;
+  }
+  int32 plain = 30;
+}
+
+message WellKnown {
+  google.protobuf.Timestamp ts = 1;
+  google.protobuf.Duration dur = 2;
+  google.protobuf.Any any = 3;
+  google.protobuf.Struct struct = 4;
+  google.protobuf.Value value = 5;
+  google.protobuf.ListValue list_value = 6;
+  google.protobuf.Empty empty = 7;
+  google.protobuf.FieldMask mask = 8;
+  google.protobuf.DoubleValue w_double = 9;
+  google.protobuf.FloatValue w_float = 10;
+  google.protobuf.Int64Value w_i64 = 11;
+  google.protobuf.UInt64Value w_u64 = 12;
+  google.protobuf.Int32Value w_i32 = 13;
+  google.protobuf.UInt32Value w_u32 = 14;
+  google.protobuf.BoolValue w_bool = 15;
+  google.protobuf.StringValue w_string = 16;
+  google.protobuf.BytesValue w_bytes = 17;
+  repeated google.protobuf.Timestamp ts_list = 18;
+  repeated google.protobuf.Any any_list = 19;
+  map<string, google.protobuf.Value> value_map = 20;
+  map<string, google.protobuf.Timestamp> ts_map = 21;
+  repeated google.protobuf.Struct struct_list = 22;
+}
+
+message Nested {
+  message Inner {
+    message Deep {
+      int32 v = 1;
+      Nested back = 2;
+    }
+    enum Kind { KIND_UNSPECIFIED = 0; KIND_A = 1; KIND_B = 2; }
+    Kind kind = 1;
+    Deep deep = 2;
+    repeated Deep deeps = 3;
+    map<string, Deep> deep_map = 4;
+  }
+  Inner inner = 1;
+  repeated Inner inners = 2;
+  Nested self = 3;
+  repeated Nested selves = 4;
+  map<int32, Nested> self_map = 5;
+  Inner.Kind kind = 6;
+}
+
+message Empty {}
+
+message OnlyRepeatedMsg {
+  repeated Empty empties = 1;
+  repeated Nested nested = 2;
+}

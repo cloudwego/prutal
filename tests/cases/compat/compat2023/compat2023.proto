@@ -1,0 +1,17 @@
+edition = "2023";
+package compat2023;
+option go_package = "./compat2023";
+
+// every way an edition 2023 field can track presence
+message Presence {
+  bytes by_explicit = 1;
+  bytes by_implicit = 2 [features.field_presence = IMPLICIT];
+  bytes by_required = 3 [features.field_presence = LEGACY_REQUIRED];
+  bytes by_aggregate = 4 [features = { field_presence: IMPLICIT }];
+  int32 i_explicit = 5;
+  int32 i_implicit = 6 [features.field_presence = IMPLICIT];
+  int32 i_required = 7 [features.field_presence = LEGACY_REQUIRED];
+  string s_implicit = 8 [features.field_presence = IMPLICIT];
+  repeated bytes by_list = 10;
+  Presence sub = 11;
+}
