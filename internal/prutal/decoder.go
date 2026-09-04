@@ -88,6 +88,12 @@ func appendToUnknownFields(s *desc.StructDesc, base unsafe.Pointer, b []byte) {
 	*x = append(*x, b...)
 }
 
+// DecodeStruct decodes b into the struct at base, merging into whatever is
+// already there: repeated fields are appended to, message fields decode into
+// the message they already point at, and unknown fields are appended. That is
+// what protobuf requires of a message that occurs more than once, and it makes
+// concatenated payloads decode the same as a merge. Callers that need a clean
+// result must hand over a zero struct.
 func (d *Decoder) DecodeStruct(b []byte, base unsafe.Pointer, s *desc.StructDesc, maxdepth int) (int, error) {
 	if maxdepth == 0 {
 		return 0, errMaxDepthExceeded
@@ -98,11 +104,6 @@ func (d *Decoder) DecodeStruct(b []byte, base unsafe.Pointer, s *desc.StructDesc
 		f   *desc.FieldDesc  // cache last field, optimize for repeated
 		tmv *desc.TmpMapVars // cache for map, optimize for repeated map
 	)
-
-	// reset unknownfields = unknownfields[:0]
-	if s.HasUnknownFields {
-		resetUnknownFields(s, base)
-	}
 
 	for i < len(b) {
 		// next field tag
@@ -143,7 +144,17 @@ func (d *Decoder) DecodeStruct(b []byte, base unsafe.Pointer, s *desc.StructDesc
 		}
 
 		if t.IsPointer {
-			p = d.mallocIfPointer(p, t)
+			// A field may occur more than once, and protobuf merges the
+			// occurrences, so decode into the message allocated by the first
+			// one instead of replacing it. Every pointer the decoder writes
+			// into lives in zeroed memory -- a struct allocated by
+			// mallocIfPointer, a oneof wrapper, a grown slice element -- so a
+			// nil pointer reliably marks the first occurrence.
+			if q := *(*unsafe.Pointer)(p); q != nil {
+				p = q
+			} else {
+				p = d.mallocIfPointer(p, t)
+			}
 			t = t.V
 		}
 

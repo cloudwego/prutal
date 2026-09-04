@@ -86,8 +86,15 @@ func Unmarshal(b []byte, v interface{}) error {
 	if err != nil {
 		return err
 	}
+	base := rv.UnsafePointer()
+	// DecodeStruct appends to the unknown fields so that a message occurring
+	// more than once merges. v is caller-provided and may carry leftovers from
+	// a previous Unmarshal, so it is reset here, once, instead.
+	if desc.HasUnknownFields {
+		resetUnknownFields(desc, base)
+	}
 	d := decoderPool.Get().(*Decoder)
-	_, err = d.DecodeStruct(b, rv.UnsafePointer(), desc, defaultRecursionMaxDepth)
+	_, err = d.DecodeStruct(b, base, desc, defaultRecursionMaxDepth)
 	decoderPool.Put(d)
 	return err
 }
