@@ -3,7 +3,7 @@
 ## Compatibility
 
 - Keep the root module compatible with Go 1.20.
-  `tests` is a separate module that requires Go 1.24.
+  `tests` is a separate module that requires Go 1.25.
 - Public compatibility and unsupported features are tracked in `README.md`; update that table when behavior changes.
 
 ## Architecture constraints
