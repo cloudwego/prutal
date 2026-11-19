@@ -199,19 +199,92 @@ func TestSize_MapStructAllKeyTypes(t *testing.T) {
 }
 
 func TestSize_ListStruct(t *testing.T) {
+	type Empty struct{}
 	type Inner struct {
 		A int32  `protobuf:"varint,1,opt"`
 		B string `protobuf:"bytes,2,opt"`
 	}
 	type S struct {
-		Items []*Inner `protobuf:"bytes,1,rep"`
+		Items     []*Inner `protobuf:"bytes,1,rep"`
+		Values    []Inner  `protobuf:"bytes,16,rep"`
+		Empties   []Empty  `protobuf:"bytes,2,rep"`
+		EmptyPtrs []*Empty `protobuf:"bytes,3,rep"`
 	}
 	p := &S{
 		Items: []*Inner{
 			{A: 1, B: "hello"},
+			nil,
 			{A: 1000, B: "world"},
 			{A: 0, B: ""},
 		},
+		Values: []Inner{
+			{A: -1, B: "neg"},
+			{A: 0, B: ""},
+		},
+		Empties:   []Empty{{}, {}, {}},
+		EmptyPtrs: []*Empty{{}, nil},
+	}
+	assertSizeMatchesMarshal(t, p)
+}
+
+func TestSize_MaxDepthExceeded(t *testing.T) {
+	type ptrNode struct {
+		Children []*ptrNode `protobuf:"bytes,1,rep"`
+	}
+	ptrRoot := &ptrNode{}
+	curPtr := ptrRoot
+	for i := 0; i < defaultRecursionMaxDepth+1; i++ {
+		next := &ptrNode{}
+		curPtr.Children = []*ptrNode{next}
+		curPtr = next
+	}
+	if _, err := Size(ptrRoot); err == nil {
+		t.Fatal("expected max depth error from Size on []*ptrNode")
+	}
+	if _, err := MarshalAppend(nil, ptrRoot); err == nil {
+		t.Fatal("expected max depth error from MarshalAppend on []*ptrNode")
+	}
+
+	type valNode struct {
+		Children []valNode `protobuf:"bytes,1,rep"`
+	}
+	valRoot := valNode{}
+	for i := 0; i < defaultRecursionMaxDepth+1; i++ {
+		valRoot = valNode{Children: []valNode{valRoot}}
+	}
+	if _, err := Size(&valRoot); err == nil {
+		t.Fatal("expected max depth error from Size on []valNode")
+	}
+	if _, err := MarshalAppend(nil, &valRoot); err == nil {
+		t.Fatal("expected max depth error from MarshalAppend on []valNode")
+	}
+}
+
+func TestSize_ListEdgeCases(t *testing.T) {
+	type customEnum int32
+	type S struct {
+		PackedNegI32   []int32      `protobuf:"varint,1,rep,packed"`
+		UnpackedNegI32 []int32      `protobuf:"varint,16,rep"`
+		PackedEnum     []customEnum `protobuf:"varint,2048,rep,packed"`
+		UnpackedEnum   []customEnum `protobuf:"varint,2049,rep"`
+		PackedNegI64   []int64      `protobuf:"varint,2,rep,packed"`
+		UnpackedNegI64 []int64      `protobuf:"varint,3,rep"`
+		PackedLarge    []bool       `protobuf:"varint,4,rep,packed"`
+		BytesList      [][]byte     `protobuf:"bytes,536870911,rep"`
+		EmptyPacked    []int32      `protobuf:"varint,5,rep,packed"`
+		EmptyStrings   []string     `protobuf:"bytes,6,rep"`
+	}
+	p := &S{
+		PackedNegI32:   []int32{-1, -128, 0, 127, 128},
+		UnpackedNegI32: []int32{-1, -128, 0, 127, 128},
+		PackedEnum:     []customEnum{-1, 0, 1, 1000},
+		UnpackedEnum:   []customEnum{-1, 0, 1, 1000},
+		PackedNegI64:   []int64{-1, -1 << 40, 0, 1 << 40},
+		UnpackedNegI64: []int64{-1, -1 << 40, 0, 1 << 40},
+		PackedLarge:    make([]bool, 150),
+		BytesList:      [][]byte{nil, {}, []byte("abc"), make([]byte, 140)},
+		EmptyPacked:    []int32{},
+		EmptyStrings:   []string{},
 	}
 	assertSizeMatchesMarshal(t, p)
 }
@@ -239,6 +312,7 @@ func BenchmarkSize_MapStruct(b *testing.B) {
 	oo.MapMaxSize = 100
 	testutils.RandFill(p, oo)
 
+	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, _ = Size(p)
@@ -253,6 +327,7 @@ func BenchmarkSize_MapScalar(b *testing.B) {
 	oo.MapMaxSize = 50
 	testutils.RandFill(p, oo)
 
+	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, _ = Size(p)
@@ -274,6 +349,46 @@ func BenchmarkSize_ListPacked(b *testing.B) {
 		PackedZigZag64: testutils.Repeat(50, rand.Int63()),
 	}
 
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = Size(p)
+	}
+}
+
+func BenchmarkSize_ListNoPack(b *testing.B) {
+	p := &TestStruct_Benchmark_Encode_List_NoPack{
+		PackedInt32s:   testutils.Repeat(50, rand.Int31()),
+		PackedInt64s:   testutils.Repeat(50, rand.Int63()),
+		PackedUint32s:  testutils.Repeat(50, rand.Uint32()),
+		PackedUint64s:  testutils.Repeat(50, rand.Uint64()),
+		PackedBools:    testutils.RandomBoolSlice(50),
+		PackedFixed32:  testutils.Repeat(50, rand.Uint32()),
+		PackedFixed64:  testutils.Repeat(50, rand.Uint64()),
+		PackedFloat:    testutils.Repeat(50, rand.Float32()),
+		PackedDouble:   testutils.Repeat(50, rand.Float64()),
+		PackedZigZag32: testutils.Repeat(50, rand.Int31()),
+		PackedZigZag64: testutils.Repeat(50, rand.Int63()),
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = Size(p)
+	}
+}
+
+func BenchmarkSize_String(b *testing.B) {
+	p := &TestStruct_Benchmark_Encode_String{
+		S1: testutils.RandomStr(10),
+		S2: testutils.RandomStr(50),
+		S3: testutils.RandomStr(100),
+		S4: testutils.RandomStr(200),
+		S5: testutils.RandomStr(400),
+		SS: testutils.Repeat(100, "helloworld"),
+	}
+
+	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, _ = Size(p)

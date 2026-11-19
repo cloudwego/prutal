@@ -24,6 +24,11 @@ import (
 
 type SizeFunc func(p unsafe.Pointer) int
 
+// SizeRepeatedFunc computes the total wire size of a repeated scalar field
+// (packed list, unpacked list, or scalar-valued map), including field tags
+// and any length prefixes.
+type SizeRepeatedFunc func(p unsafe.Pointer, wireTagSize int) int
+
 var sizeFuncs = map[CoderType]SizeFunc{
 	CoderVarintU32: UnsafeSizeVarintU32,
 	CoderVarintI32: UnsafeSizeVarintI32,

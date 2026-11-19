@@ -92,8 +92,8 @@ func SizeVarint(v uint64) int {
 
 // CoderType identifies a protobuf field encoding strategy. It is used as a key
 // to look up type-specialized encode, decode, and size functions (AppendFunc,
-// SizeFunc, SizeMapFunc, etc.) so the hot path dispatches through a function
-// pointer instead of a type switch.
+// SizeFunc, SizeRepeatedFunc, etc.) so the hot path dispatches through a
+// function pointer instead of a type switch.
 type CoderType int8
 
 const (

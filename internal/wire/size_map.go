@@ -22,13 +22,10 @@ import (
 	"github.com/cloudwego/prutal/internal/protowire"
 )
 
-// SizeMapFunc computes the total wire size of a scalar-valued map field,
-// including field tags and length prefixes for each entry.
-type SizeMapFunc func(p unsafe.Pointer, wireTagSize int) int
+var mapSizeFuncs = map[mapEncoderFuncKey]SizeRepeatedFunc{}
 
-var mapSizeFuncs = map[mapEncoderFuncKey]SizeMapFunc{}
-
-func GetMapSizeFunc(k, v CoderType) SizeMapFunc {
+// GetMapSizeFunc returns the specialized size function for a scalar-valued map field.
+func GetMapSizeFunc(k, v CoderType) SizeRepeatedFunc {
 	return mapSizeFuncs[mapEncoderFuncKey{K: k, V: v}]
 }
 
@@ -52,7 +49,7 @@ func szByteSlice(v []byte) int { return protowire.SizeBytes(len(v)) }
 // makeSizeMap creates a typed map size function using Go generics.
 // Uses typed range iteration (no reflection overhead) and value-level
 // key/value size functions (no unsafe.Pointer, no heap escape).
-func makeSizeMap[K comparable, V any](kf func(K) int, vf func(V) int) SizeMapFunc {
+func makeSizeMap[K comparable, V any](kf func(K) int, vf func(V) int) SizeRepeatedFunc {
 	return func(p unsafe.Pointer, wireTagSize int) int {
 		n := 0
 		for k, v := range *(*map[K]V)(p) {
@@ -64,7 +61,7 @@ func makeSizeMap[K comparable, V any](kf func(K) int, vf func(V) int) SizeMapFun
 }
 
 func init() {
-	reg := func(k, v CoderType, f SizeMapFunc) {
+	reg := func(k, v CoderType, f SizeRepeatedFunc) {
 		mapSizeFuncs[mapEncoderFuncKey{K: k, V: v}] = f
 	}
 

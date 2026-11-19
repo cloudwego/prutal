@@ -72,15 +72,32 @@ func SizeStruct(base unsafe.Pointer, s *desc.StructDesc, maxdepth int) (int, err
 			p = *(*unsafe.Pointer)(p)
 		}
 
-		// Scalar fields
-		if !f.Repeated && f.SizeFunc != nil {
-			n += f.WireTagSize + f.SizeFunc(p)
+		// Non-repeated scalar and struct fields
+		if !f.Repeated {
+			if f.SizeFunc != nil {
+				n += f.WireTagSize + f.SizeFunc(p)
+				continue
+			}
+			if t.Kind != reflect.Struct {
+				panic("[BUG] not struct")
+			}
+			sz, err := SizeStruct(p, t.S, maxdepth-1)
+			if err != nil {
+				return 0, err
+			}
+			n += f.WireTagSize + protowire.SizeBytes(sz)
 			continue
 		}
 
-		// List fields
+		// Repeated scalar list or map fast path
+		if f.SizeRepeated != nil {
+			n += f.SizeRepeated(p, f.WireTagSize)
+			continue
+		}
+
+		// List fields (struct lists)
 		if f.IsList {
-			sz, err := sizeListField(f, p, t, maxdepth)
+			sz, err := sizeStructListField(f, p, t, maxdepth)
 			if err != nil {
 				return 0, err
 			}
@@ -88,7 +105,7 @@ func SizeStruct(base unsafe.Pointer, s *desc.StructDesc, maxdepth int) (int, err
 			continue
 		}
 
-		// Map fields
+		// Map fields (struct-valued maps)
 		if f.IsMap {
 			sz, err := sizeMapField(f, p, maxdepth)
 			if err != nil {
@@ -97,16 +114,6 @@ func SizeStruct(base unsafe.Pointer, s *desc.StructDesc, maxdepth int) (int, err
 			n += sz
 			continue
 		}
-
-		// Struct fields
-		if t.Kind != reflect.Struct {
-			panic("[BUG] not struct")
-		}
-		sz, err := SizeStruct(p, t.S, maxdepth-1)
-		if err != nil {
-			return 0, err
-		}
-		n += f.WireTagSize + protowire.SizeBytes(sz)
 	}
 
 	if s.HasUnknownFields {
@@ -115,69 +122,43 @@ func SizeStruct(base unsafe.Pointer, s *desc.StructDesc, maxdepth int) (int, err
 	return n, nil
 }
 
-func sizeListField(f *desc.FieldDesc, p unsafe.Pointer, t *desc.Type, maxdepth int) (int, error) {
+func sizeStructListField(f *desc.FieldDesc, p unsafe.Pointer, t *desc.Type, maxdepth int) (int, error) {
 	vt := t.V
-	h := (*hack.SliceHeader)(p)
-	if h.Len == 0 {
-		return 0, nil
-	}
-
-	if f.Packed {
-		// packed: tag + SizeBytes(content)
-		content := 0
-		ep := h.Data
-		for i := 0; i < h.Len; i++ {
-			if i != 0 {
-				ep = unsafe.Add(ep, vt.Size)
+	if vt.IsPointer {
+		s := vt.V.S
+		vv := *(*[]unsafe.Pointer)(p)
+		n := len(vv) * f.WireTagSize
+		for _, base := range vv {
+			sz, err := SizeStruct(base, s, maxdepth-1)
+			if err != nil {
+				return 0, err
 			}
-			content += f.SizeFunc(ep)
-		}
-		return f.WireTagSize + protowire.SizeBytes(content), nil
-	}
-
-	if f.SizeFunc != nil {
-		// scalar list: each element has tag + value
-		n := 0
-		ep := h.Data
-		for i := 0; i < h.Len; i++ {
-			if i != 0 {
-				ep = unsafe.Add(ep, vt.Size)
-			}
-			n += f.WireTagSize + f.SizeFunc(ep)
+			n += protowire.SizeBytes(sz)
 		}
 		return n, nil
 	}
 
-	// struct list
 	s := vt.S
-	if vt.IsPointer {
-		s = vt.V.S
+	h := (*hack.SliceHeader)(p)
+	if h.Len == 0 {
+		return 0, nil
 	}
-	n := 0
+	n := h.Len * f.WireTagSize
 	ep := h.Data
 	for i := 0; i < h.Len; i++ {
 		if i != 0 {
 			ep = unsafe.Add(ep, vt.Size)
 		}
-		base := ep
-		if vt.IsPointer {
-			base = *(*unsafe.Pointer)(ep)
-		}
-		sz, err := SizeStruct(base, s, maxdepth-1)
+		sz, err := SizeStruct(ep, s, maxdepth-1)
 		if err != nil {
 			return 0, err
 		}
-		n += f.WireTagSize + protowire.SizeBytes(sz)
+		n += protowire.SizeBytes(sz)
 	}
 	return n, nil
 }
 
 func sizeMapField(f *desc.FieldDesc, p unsafe.Pointer, maxdepth int) (int, error) {
-	// fast path: typed iteration for scalar-valued maps (no reflection)
-	if f.SizeMapFunc != nil {
-		return f.SizeMapFunc(p, f.WireTagSize), nil
-	}
-
 	t := f.T
 	vt := t.V
 

@@ -215,12 +215,15 @@ type FieldDesc struct {
 
 	WireTagSize int // pre-computed size of WireTag varint
 
-	// only for scalar types (including packed scalar types)
+	// AppendFunc handles singular scalars and packed scalar lists;
+	// SizeFunc handles singular scalars only (repeated scalars use SizeRepeated).
 	AppendFunc wire.AppendFunc
 	SizeFunc   wire.SizeFunc
 
-	// only for list or map scalar types
+	// AppendRepeated handles unpacked scalar lists and scalar-valued maps;
+	// SizeRepeated handles packed/unpacked scalar lists and scalar-valued maps.
 	AppendRepeated wire.AppendRepeatedFunc
+	SizeRepeated   wire.SizeRepeatedFunc
 
 	// only for map type
 	KeyType TagType
@@ -234,8 +237,6 @@ type FieldDesc struct {
 
 	KeySizeFunc wire.SizeFunc
 	ValSizeFunc wire.SizeFunc
-
-	SizeMapFunc wire.SizeMapFunc
 
 	// only for packable repeated types, and some map types
 	DecodeFunc func(b []byte, p unsafe.Pointer) error
@@ -295,13 +296,14 @@ func (f *FieldDesc) finalizeField() (err error) {
 		f.ValAppendFunc = getAppendFunc(f.ValType, t.V.RealKind(), false)
 		f.KeySizeFunc = getSizeFunc(f.KeyType, t.K.RealKind())
 		f.ValSizeFunc = getSizeFunc(f.ValType, t.V.RealKind())
-		f.SizeMapFunc = getSizeMapFunc(f)
 	}
 	if f.IsList {
 		f.AppendRepeated = getAppendListFunc(f)
+		f.SizeRepeated = getSizeListFunc(f)
 	}
 	if f.IsMap {
 		f.AppendRepeated = getAppendMapFunc(f)
+		f.SizeRepeated = getSizeMapFunc(f)
 	}
 	f.DecodeFunc = getDecodeFunc(f)
 	return
