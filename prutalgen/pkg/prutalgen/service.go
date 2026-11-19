@@ -96,7 +96,7 @@ func (x *protoLoader) loadService(p *Proto, decl *protoparser.ServiceDecl) {
 	}
 	s.Directives.Parse(s.HeadComment, s.InlineComment)
 	for _, opt := range decl.Options {
-		s.Options = append(s.Options, x.loadScopedOption(opt, "a service")...)
+		x.appendScopedOption(&s.Options, opt, optionTargetService)
 	}
 	for _, md := range decl.Methods {
 		m := &Method{
@@ -111,7 +111,7 @@ func (x *protoLoader) loadService(p *Proto, decl *protoparser.ServiceDecl) {
 		m.Request = &Type{Name: md.RequestType, pos: md.RequestPos, m: m}
 		m.Return = &Type{Name: md.ReturnType, pos: md.ReturnPos, m: m}
 		for _, opt := range md.Options {
-			m.Options = append(m.Options, x.loadScopedOption(opt, "an RPC")...)
+			x.appendScopedOption(&m.Options, opt, optionTargetMethod)
 		}
 		s.Methods = append(s.Methods, m)
 	}

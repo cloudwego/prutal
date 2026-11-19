@@ -108,8 +108,7 @@ func (x *protoLoader) loadExtensions(m *Message, decl *protoparser.ExtensionsDec
 	if x.currentProto().IsProto3() {
 		x.Fatalf("%s - extension ranges are not allowed in proto3", decl.Pos)
 	}
-	options := x.parseFieldOptions(decl.Options)
-	x.rejectFieldPresenceOption(decl.Pos, options, "an extension range")
+	_ = x.loadBracketOptions(decl.Options, optionTargetExtensionRange)
 	ranges := x.parseRanges(decl.Ranges, int32(protowire.MinValidNumber), int32(protowire.MaxValidNumber),
 		m.extensionRanges, "extension range", false)
 	m.extensionRanges = append(m.extensionRanges, ranges...)

@@ -47,6 +47,11 @@ type Field struct {
 	Oneof *Oneof // if not nil, it's from oneof
 	Msg   *Message
 
+	// extProto is set for extend fields so type resolution and feature
+	// validation share the normal Field machinery even when Msg is nil
+	// (top-level extend).
+	extProto *Proto
+
 	// oneofTypeSuffix is appended to the oneof wrapper struct name to
 	// resolve collisions with sibling nested message/enum GoNames. Only
 	// set for fields inside an oneof, during Message.resolve.
@@ -102,7 +107,7 @@ func (f *Field) IsPackedEncoding() bool {
 		}
 		return v == "PACKED"
 	}
-	return true // proto3
+	return !f.Options.Is(option_packed, "false") // proto3
 }
 
 func (f *Field) resolve() {
@@ -200,23 +205,65 @@ func (f *Field) fieldPresence() (string, bool) {
 	return f.Msg.Proto.Options.Get(f_field_presence)
 }
 
-// verifyFieldPresence checks direct option applicability and restrictions that
-// depend on the resolved field kind and inherited file features.
-func (f *Field) verifyFieldPresence() error {
+// isDelimitedEncoding reports whether a non-map message field in an edition 2023
+// file resolves to features.message_encoding = DELIMITED (group wire encoding).
+func (f *Field) isDelimitedEncoding() bool {
+	if f.Msg == nil || f.Msg.Proto == nil || !f.Msg.Proto.IsEdition2023() {
+		return false
+	}
+	if !f.IsMessage() {
+		return false
+	}
+	if s, ok := f.Options.Get(f_message_encoding); ok {
+		return s == "DELIMITED"
+	}
+	return f.Msg.Proto.Options.Is(f_message_encoding, "DELIMITED")
+}
+
+// verifyFieldFeatureOptions validates direct feature options on f using its
+// resolved field kind and type. Shared between normal message fields and
+// extension fields.
+func (f *Field) verifyFieldFeatureOptions() error {
 	for _, o := range f.Options {
-		if o.Name != f_field_presence {
-			continue
+		switch o.Name {
+		case f_field_presence:
+			switch {
+			case f.IsMap():
+				return fmt.Errorf("option %q cannot be set on map field %q", o.Name, f.Name)
+			case f.Repeated:
+				return fmt.Errorf("option %q cannot be set on repeated field %q", o.Name, f.Name)
+			case f.Oneof != nil:
+				return fmt.Errorf("option %q cannot be set on oneof field %q", o.Name, f.Name)
+			case f.Type != nil && f.IsMessage() && o.Value == "IMPLICIT":
+				return fmt.Errorf("option %q cannot use %q on message field %q", o.Name, o.Value, f.Name)
+			}
+		case f_repeated_field_encoding:
+			if !f.Repeated && !f.IsMap() {
+				return fmt.Errorf("option %q can only be set on repeated fields, not %q", o.Name, f.Name)
+			}
+			if o.Value == "PACKED" && (f.IsMap() || (f.Type != nil && !scalarPackedTypes[f.Type.Name] && !f.Type.IsEnum())) {
+				return fmt.Errorf("option %q cannot use %q on non-packable field %q", o.Name, o.Value, f.Name)
+			}
+		case f_utf8_validation:
+			isString := f.Type != nil && ((!f.IsMap() && f.Type.Name == "string") ||
+				(f.IsMap() && (f.Key.Name == "string" || f.Type.Name == "string")))
+			if !isString {
+				return fmt.Errorf("option %q can only be set on string fields, not %q", o.Name, f.Name)
+			}
+		case f_message_encoding:
+			if !f.IsMessage() {
+				return fmt.Errorf("option %q can only be set on message fields, not %q", o.Name, f.Name)
+			}
 		}
-		switch {
-		case f.IsMap():
-			return fmt.Errorf("option %q cannot be set on map field %q", o.Name, f.Name)
-		case f.Repeated:
-			return fmt.Errorf("option %q cannot be set on repeated field %q", o.Name, f.Name)
-		case f.Oneof != nil:
-			return fmt.Errorf("option %q cannot be set on oneof field %q", o.Name, f.Name)
-		case f.Type != nil && f.IsMessage() && o.Value == "IMPLICIT":
-			return fmt.Errorf("option %q cannot use %q on message field %q", o.Name, o.Value, f.Name)
-		}
+	}
+	return nil
+}
+
+// verifyFeatures checks edition feature applicability and restrictions that
+// depend on the resolved field kind and inherited file features.
+func (f *Field) verifyFeatures() error {
+	if err := f.verifyFieldFeatureOptions(); err != nil {
+		return err
 	}
 	if f.IsMap() && f.Msg != nil && f.Msg.Proto != nil && f.Msg.Proto.IsEdition2023() &&
 		f.Msg.Proto.Options.Is(f_field_presence, "IMPLICIT") &&
@@ -318,13 +365,13 @@ func (f *Field) OneofStructName() string {
 	return f.Msg.GoName + "_" + f.GoName + f.oneofTypeSuffix
 }
 
-func (x *protoLoader) parseFieldOptions(opts []*protoparser.OptionDecl) Options {
+func (x *protoLoader) loadBracketOptions(opts []*protoparser.OptionDecl, target optionTarget) Options {
 	if len(opts) == 0 {
 		return nil
 	}
 	var options Options
 	for _, o := range opts {
-		options = append(options, x.parseOptions(o.Name, o.Value)...)
+		x.appendScopedOption(&options, o, target)
 	}
 	return options
 }
@@ -357,15 +404,28 @@ func (x *protoLoader) newFieldFromDecl(decl *protoparser.FieldDecl) *Field {
 		x.Fatalf("%s - parse field number %q err", decl.NumberPos, decl.Number)
 	}
 	f.FieldNumber = num
-	f.Options = x.parseFieldOptions(decl.Options)
+	f.Options = x.loadBracketOptions(decl.Options, optionTargetField)
 	return f
 }
 
-func (x *protoLoader) loadExtend(decl *protoparser.ExtendDecl) {
+func (x *protoLoader) loadExtend(p *Proto, parent *Message, decl *protoparser.ExtendDecl) {
 	for _, fd := range decl.Fields {
 		x.checkFieldLabel(fd.Label, fd.LabelPos)
-		options := x.parseFieldOptions(fd.Options)
-		x.rejectFieldPresenceOption(fd.Pos, options, "an extension field")
+		options := x.loadBracketOptions(fd.Options, optionTargetExtensionField)
+		f := &Field{
+			Name:     fd.Name,
+			Type:     &Type{Name: fd.Type, pos: fd.TypePos},
+			Repeated: fd.Label == "repeated",
+			Options:  options,
+			Msg:      parent,
+			extProto: p,
+		}
+		f.Type.f = f
+		if parent != nil {
+			parent.extFields = append(parent.extFields, f)
+		} else {
+			p.extFields = append(p.extFields, f)
+		}
 	}
 }
 
@@ -415,6 +475,6 @@ func (x *protoLoader) loadMapField(m *Message, decl *protoparser.MapFieldDecl) {
 		x.Fatalf("%s - parse field number %q err", decl.NumberPos, decl.Number)
 	}
 	f.FieldNumber = num
-	f.Options = x.parseFieldOptions(decl.Options)
+	f.Options = x.loadBracketOptions(decl.Options, optionTargetField)
 	m.Fields = append(m.Fields, f)
 }

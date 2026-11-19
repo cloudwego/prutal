@@ -64,6 +64,8 @@ type Proto struct {
 
 	Services []*Service
 
+	extFields []*Field // top-level extend fields, stored for validation only
+
 	l LoggerIface
 }
 
@@ -423,6 +425,9 @@ func (p *Proto) resolve() {
 	for _, s := range p.Services {
 		s.resolve()
 	}
+	for _, f := range p.extFields {
+		f.Type.resolve(true)
+	}
 }
 
 func (p *Proto) verify() error {
@@ -441,6 +446,70 @@ func (p *Proto) verify() error {
 		if err := s.verify(); err != nil {
 			errs = append(errs, fmt.Errorf("service %q verify err: %w", s.Name, err))
 		}
+	}
+	for _, f := range p.extFields {
+		if err := f.verifyFieldFeatureOptions(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// validateSupportedEdition2023 rejects prutalgen-unsupported Edition 2023
+// codegen/runtime features on root protos (DELIMITED message fields, API_OPAQUE,
+// API_HYBRID) and on imported messages reachable from root message fields
+// (DELIMITED message fields and API_OPAQUE). Unreferenced imported messages are
+// skipped so importing an enum or unrelated message from a third-party file does
+// not fail code generation.
+func validateSupportedEdition2023(roots []*Proto) error {
+	rootSet := make(map[*Proto]bool, len(roots))
+	for _, r := range roots {
+		rootSet[r] = true
+	}
+
+	var errs []error
+	visited := make(map[*Message]bool)
+
+	var visit func(m *Message)
+	visit = func(m *Message) {
+		if m == nil || visited[m] {
+			return
+		}
+		visited[m] = true
+		isRoot := rootSet[m.Proto]
+
+		if m.Proto != nil && m.Proto.IsEdition2023() {
+			level := m.effectiveGoAPILevel()
+			if isRoot && level != "API_OPEN" {
+				errs = append(errs, fmt.Errorf("message %q uses unsupported Go API level %q", m.FullName(), level))
+			} else if !isRoot && level == "API_OPAQUE" {
+				errs = append(errs, fmt.Errorf("imported message %q uses unsupported Go API level %q", m.FullName(), level))
+			}
+		}
+
+		for _, f := range m.Fields {
+			if f.isDelimitedEncoding() {
+				if isRoot {
+					errs = append(errs, fmt.Errorf("message %q field %q uses unsupported delimited message_encoding (groups are not supported)", m.FullName(), f.Name))
+				} else {
+					errs = append(errs, fmt.Errorf("imported message %q field %q uses unsupported delimited message_encoding (groups are not supported)", m.FullName(), f.Name))
+				}
+			}
+			if f.Type != nil && f.Type.IsMessage() {
+				visit(f.Type.Message())
+			}
+		}
+	}
+
+	var walkRootMessages func(mm []*Message)
+	walkRootMessages = func(mm []*Message) {
+		for _, m := range mm {
+			visit(m)
+			walkRootMessages(m.Messages)
+		}
+	}
+	for _, r := range roots {
+		walkRootMessages(r.Messages)
 	}
 	return errors.Join(errs...)
 }

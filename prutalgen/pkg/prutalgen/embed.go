@@ -37,6 +37,9 @@ var (
 	//go:embed wellknowns/field_mask.proto
 	field_mask_proto []byte
 
+	//go:embed wellknowns/go_features.proto
+	go_features_proto []byte
+
 	//go:embed wellknowns/source_context.proto
 	source_context_proto []byte
 
@@ -71,6 +74,7 @@ func init() {
 		{"google/protobuf/duration.proto", duration_proto},
 		{"google/protobuf/empty.proto", empty_proto},
 		{"google/protobuf/field_mask.proto", field_mask_proto},
+		{"google/protobuf/go_features.proto", go_features_proto},
 		{"google/protobuf/source_context.proto", source_context_proto},
 		{"google/protobuf/struct.proto", struct_proto},
 		{"google/protobuf/timestamp.proto", timestamp_proto},

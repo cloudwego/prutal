@@ -25,5 +25,7 @@ protos=(
 
 for proto in "${protos[@]}";
 do
-  cp -v $PROTOBUF_REPO/src/google/protobuf/$proto ./
+  cp -v "$PROTOBUF_REPO/src/google/protobuf/$proto" ./
 done
+
+cp -v "$PROTOBUF_REPO/go/google/protobuf/go_features.proto" ./

@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"github.com/cloudwego/prutal/internal/testutils/assert"
+	"github.com/cloudwego/prutal/prutalgen/internal/protoparser"
 )
 
 func TestEnum(t *testing.T) {
@@ -166,7 +167,7 @@ func TestEnumEditionOpenSemantics(t *testing.T) {
 		{Name: "FOO", Value: 2},
 	}
 	assert.NoError(t, p.verify())
-	assert.False(t, verifyOption(f_enum_type, "UNKNOWN"))
+	assert.False(t, verifyOptionValue(f_enum_type, "UNKNOWN", protoparser.ValueIdent))
 }
 
 func TestLoaderEnumEditionAggregateSemantics(t *testing.T) {

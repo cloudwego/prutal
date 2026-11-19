@@ -17,6 +17,7 @@
 package prutalgen
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/cloudwego/prutal/internal/testutils/assert"
@@ -101,18 +102,24 @@ service echo_service {
 }
 
 func TestLoaderFeatureAggregateOption(t *testing.T) {
-	p := loadTestProto(t, `
+	fn := writeFile(t, "features.proto", []byte(`
 edition = "2023";
 option go_package = "example.com/features";
+import "google/protobuf/go_features.proto";
 option features = {
   enum_type: CLOSED
   repeated_field_encoding: PACKED;
-  [pb.go]: { api_level: API_OPEN, s: "ok\n", items: ["a", "b"] }
+  [pb.go]: { api_level: API_OPEN }
+  [test.ext]: { s: "ok\n", items: ["a", "b"] }
 };
-`)
+`))
+	loader := NewLoader([]string{filepath.Dir(fn)}, nil)
+	loader.SetLogger(&testLogger{t})
+	p := loader.LoadProtos([]string{fn})[0]
 
 	assert.True(t, p.Options.Is(f_enum_type, "CLOSED"))
 	assert.True(t, p.Options.Is(f_repeated_field_encoding, "PACKED"))
+	assert.True(t, p.Options.Is(f_go_api_level, "API_OPEN"))
 	_, ok := p.Options.Get("features")
 	assert.True(t, ok, "aggregate option must be preserved")
 	_, hasExt := p.Options.Get("features.pb.go")
@@ -126,7 +133,7 @@ func TestLoaderOptionBlockAndListEscapes(t *testing.T) {
 	}{
 		{"block string escape", `option go_package = "example.com/opt"; option (o) = { s: "\q" };`},
 		{"list string escape", `option go_package = "example.com/opt"; option (o) = { list: ["\q"] };`},
-		{"features ext string escape", `edition = "2023"; option go_package = "example.com/opt"; option features = { [pb.go]: { s: "\q" } };`},
+		{"features ext string escape", `edition = "2023"; option go_package = "example.com/opt"; option features = { [test.ext]: { s: "\q" } };`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			expectProtoError(t, tc.payload, "option syntax err")

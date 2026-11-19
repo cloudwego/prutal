@@ -228,6 +228,9 @@ func (x *protoLoader) loadRoots(files []string) []*Proto {
 			x.Fatalf("proto %s verify err: %s", p.ProtoFile, err)
 		}
 	}
+	if err := validateSupportedEdition2023(roots); err != nil {
+		x.Fatalf("%s", err)
+	}
 	return roots
 }
 
@@ -386,7 +389,7 @@ func (x *protoLoader) loadFile(p *Proto, file *protoparser.File) {
 		case *protoparser.EnumDecl:
 			x.loadEnum(p, nil, d)
 		case *protoparser.ExtendDecl:
-			x.loadExtend(d)
+			x.loadExtend(p, nil, d)
 		case *protoparser.ServiceDecl:
 			x.loadService(p, d)
 		}

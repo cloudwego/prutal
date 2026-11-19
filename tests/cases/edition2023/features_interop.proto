@@ -1,0 +1,46 @@
+edition = "2023";
+
+package edition2023_features;
+
+import "google/protobuf/go_features.proto";
+
+option features.(pb.go).api_level = API_OPEN;
+option features.message_encoding = LENGTH_PREFIXED;
+
+enum OpenEnum {
+  OPEN_UNSPECIFIED = 0;
+  OPEN_A = 1;
+  OPEN_B = 2;
+}
+
+enum ClosedEnum {
+  option features.enum_type = CLOSED;
+  CLOSED_A = 1;
+  CLOSED_B = 2;
+}
+
+message FeaturesInterop {
+  int32 i_explicit = 1;
+  int32 i_implicit = 2 [features.field_presence = IMPLICIT];
+  int32 i_required = 3 [features.field_presence = LEGACY_REQUIRED];
+  bytes by_explicit = 4;
+  bytes by_implicit = 5 [features.field_presence = IMPLICIT];
+  bytes by_required = 6 [features.field_presence = LEGACY_REQUIRED];
+  string s_explicit = 7;
+  string s_implicit = 8 [features.field_presence = IMPLICIT];
+
+  repeated int32 packed_i32 = 9;
+  repeated int32 expanded_i32 = 10 [features.repeated_field_encoding = EXPANDED];
+  repeated OpenEnum packed_open_enum = 11;
+  repeated ClosedEnum expanded_closed_enum = 12 [features.repeated_field_encoding = EXPANDED];
+
+  OpenEnum open_explicit = 13;
+  OpenEnum open_implicit = 14 [features.field_presence = IMPLICIT];
+  ClosedEnum closed_explicit = 15;
+
+  FeaturesInterop child = 16;
+  oneof pick {
+    int32 pick_i32 = 17;
+    FeaturesInterop pick_msg = 18;
+  }
+}

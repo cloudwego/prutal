@@ -218,7 +218,7 @@ func (x *protoLoader) loadEnum(p *Proto, parent *Message, decl *protoparser.Enum
 		parent.Enums = append(parent.Enums, e)
 	}
 	for _, opt := range decl.Options {
-		e.Options = append(e.Options, x.loadScopedOption(opt, "an enum")...)
+		x.appendScopedOption(&e.Options, opt, optionTargetEnum)
 	}
 	for _, res := range decl.Reserved {
 		x.loadEnumReserved(e, res)
@@ -243,10 +243,6 @@ func (x *protoLoader) loadEnumValue(e *Enum, ev *protoparser.EnumValueDecl) {
 	}
 	f.Value = num
 
-	for _, o := range ev.Options {
-		options := x.parseOptions(o.Name, o.Value)
-		x.rejectFieldPresenceOption(o.Pos, options, "an enum entry")
-		f.Options = append(f.Options, options...)
-	}
+	f.Options = x.loadBracketOptions(ev.Options, optionTargetEnumEntry)
 	e.Fields = append(e.Fields, f)
 }

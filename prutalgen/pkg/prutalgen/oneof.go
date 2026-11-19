@@ -48,7 +48,7 @@ func (x *protoLoader) loadOneof(m *Message, decl *protoparser.OneofDecl) {
 		Msg:  m,
 	}
 	for _, opt := range decl.Options {
-		o.Options = append(o.Options, x.loadScopedOption(opt, "a oneof")...)
+		x.appendScopedOption(&o.Options, opt, optionTargetOneof)
 	}
 	m.Oneofs = append(m.Oneofs, o)
 	for _, fd := range decl.Fields {

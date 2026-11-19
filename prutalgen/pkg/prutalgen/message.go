@@ -47,6 +47,7 @@ type Message struct {
 	reserved        reservedRanges
 	reservedNames   reservedNames
 	extensionRanges reservedRanges
+	extFields       []*Field // nested extend fields, stored for validation only
 
 	Msg   *Message // for embedded message only
 	Proto *Proto
@@ -136,6 +137,9 @@ func (m *Message) resolve() {
 	for _, x := range m.Fields {
 		x.resolve()
 	}
+	for _, x := range m.extFields {
+		x.Type.resolve(true)
+	}
 
 	for _, o := range m.Oneofs {
 		o.GoName = strs.GoCamelCase(o.Name)
@@ -202,6 +206,20 @@ func (m *Message) resolveFieldConflicts() {
 	}
 }
 
+func (m *Message) effectiveGoAPILevel() string {
+	for cur := m; cur != nil; cur = cur.Msg {
+		if s, ok := cur.Options.Get(f_go_api_level); ok && s != "API_LEVEL_UNSPECIFIED" {
+			return s
+		}
+	}
+	if m.Proto != nil {
+		if s, ok := m.Proto.Options.Get(f_go_api_level); ok && s != "API_LEVEL_UNSPECIFIED" {
+			return s
+		}
+	}
+	return "API_OPEN"
+}
+
 func (m *Message) verify() error {
 	var errs []error
 	for _, x := range m.Enums {
@@ -214,6 +232,11 @@ func (m *Message) verify() error {
 			errs = append(errs, fmt.Errorf("message %s verify err: %w", x.FullName(), err))
 		}
 	}
+	for _, x := range m.extFields {
+		if err := x.verifyFieldFeatureOptions(); err != nil {
+			errs = append(errs, err)
+		}
+	}
 	exists := map[int32]bool{}
 	for _, reserved := range m.reserved {
 		for _, extension := range m.extensionRanges {
@@ -224,7 +247,7 @@ func (m *Message) verify() error {
 		}
 	}
 	for _, x := range m.Fields {
-		if err := x.verifyFieldPresence(); err != nil {
+		if err := x.verifyFeatures(); err != nil {
 			errs = append(errs, err)
 		}
 		if m.reservedNames.Has(x.Name) {
@@ -274,13 +297,13 @@ func (x *protoLoader) loadMessage(p *Proto, parent *Message, decl *protoparser.M
 		case *protoparser.OneofDecl:
 			x.loadOneof(m, d)
 		case *protoparser.OptionDecl:
-			m.Options = append(m.Options, x.loadScopedOption(d, "a message")...)
+			x.appendScopedOption(&m.Options, d, optionTargetMessage)
 		case *protoparser.ReservedDecl:
 			x.loadMessageReserved(m, d)
 		case *protoparser.ExtensionsDecl:
 			x.loadExtensions(m, d)
 		case *protoparser.ExtendDecl:
-			x.loadExtend(d)
+			x.loadExtend(p, m, d)
 		case *protoparser.MapFieldDecl:
 			x.loadMapField(m, d)
 		case *protoparser.FieldDecl:

@@ -82,7 +82,12 @@ func (t *Type) GoImport() string {
 		return t.p.GoImport
 	}
 	if t.f != nil {
-		return t.f.Msg.Proto.GoImport
+		if t.f.Msg != nil {
+			return t.f.Msg.Proto.GoImport
+		}
+		if t.f.extProto != nil {
+			return t.f.extProto.GoImport
+		}
 	} else if t.m != nil {
 		return t.m.Service.Proto.GoImport
 	}
@@ -133,8 +138,13 @@ func (t *Type) resolve(allowScalar bool) {
 	var p *Proto
 	var scope string
 	if t.f != nil {
-		p = t.f.Msg.Proto
-		scope = t.f.Msg.FullName()
+		if t.f.Msg != nil {
+			p = t.f.Msg.Proto
+			scope = t.f.Msg.FullName()
+		} else {
+			p = t.f.extProto
+			scope = p.Package
+		}
 	} else if t.m != nil {
 		p = t.m.Service.Proto
 		scope = fullProtoName(p.Package, t.m.Service.Name)
