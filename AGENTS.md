@@ -8,7 +8,7 @@
 
 ## Performance
 
-- High-performance binary `Marshal`, `MarshalAppend`, `Unmarshal`, and `Size` are the primary goal of this repository.
+- High-performance binary `Marshal`, `MarshalAppend`, `Unmarshal`, `UnmarshalMerge`, and `Size` are the primary goal of this repository.
   When evaluating new features, spec strictness, or compatibility fixes, weigh hot-path CPU, allocation, and GC write-barrier costs first; do not add per-field or per-call overhead to common cases for rare edge cases.
 - Keep hot paths (`internal/prutal`, `internal/wire`, `internal/desc` lookup) free of unnecessary heap allocations, reflection calls, interface boxing, and dynamic dispatch.
   Move type inspection, feature resolution, and coder selection into `StructDesc` parsing/finalization or `prutalgen` code generation.

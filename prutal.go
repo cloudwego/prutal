@@ -39,7 +39,24 @@ func Size(v interface{}) (int, error) {
 	return prutal.Size(v)
 }
 
-// Unmarshal parses the protobuf-encoded data and stores the result in the value pointed to by v.
+// Unmarshal resets v and parses the protobuf-encoded data into the value pointed to by v.
+// If decoding fails, v has been reset and may contain partially decoded fields.
 func Unmarshal(b []byte, v interface{}) error {
 	return prutal.Unmarshal(b, v)
+}
+
+// UnmarshalMerge parses the protobuf-encoded data into the value pointed to by v
+// without resetting v first, matching proto.UnmarshalOptions{Merge: true}:
+// singular fields present on the wire overwrite existing values, repeated fields
+// append, map entries overwrite matching keys, singular and oneof message fields
+// merge recursively, and unknown fields append. On error, v may contain partially
+// merged fields.
+//
+// Callers passing a zero or pre-reset struct can use UnmarshalMerge to avoid the
+// reset cost of Unmarshal. For repeated non-pointer struct fields ([]T), any spare
+// capacity (len < cap) is decoded into without zeroing, so pre-reset slices must
+// clear or zero spare capacity (e.g. s = nil, s = s[:0:0], or zeroing s[:cap(s)]
+// before s = s[:0]).
+func UnmarshalMerge(b []byte, v interface{}) error {
+	return prutal.UnmarshalMerge(b, v)
 }

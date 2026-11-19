@@ -443,3 +443,119 @@ func checkOpaqueUnsupported(t *testing.T, m, m1 opaqueMessage) {
 	assert.True(t, !m1.HasA(), "presence is not restored")
 	assert.True(t, !m1.HasS(), "presence of an empty string is not restored")
 }
+
+func TestUnmarshalResetAndMergeCompat(t *testing.T) {
+	unk1 := protowire.AppendVarint(protowire.AppendTag(nil, 99, protowire.VarintType), 123)
+	unk2 := protowire.AppendVarint(protowire.AppendTag(nil, 100, protowire.VarintType), 456)
+
+	initial := &Nested{
+		Kind: Nested_Inner_KIND_B,
+		Inner: &Nested_Inner{
+			Kind: Nested_Inner_KIND_A,
+			Deep: &Nested_Inner_Deep{V: 11},
+		},
+		Inners: []*Nested_Inner{{Kind: Nested_Inner_KIND_A}},
+		SelfMap: map[int32]*Nested{
+			1: {Kind: Nested_Inner_KIND_A, Inner: &Nested_Inner{Kind: Nested_Inner_KIND_A}},
+			3: {Kind: Nested_Inner_KIND_B},
+		},
+	}
+	initial.ProtoReflect().SetUnknown(append([]byte(nil), unk1...))
+	// Populate MessageState/sizeCache by marshaling first.
+	_, err := proto.Marshal(initial)
+	assert.NoError(t, err)
+
+	patch := &Nested{
+		Inner: &Nested_Inner{
+			Kind: Nested_Inner_KIND_B,
+		},
+		Inners: []*Nested_Inner{{Kind: Nested_Inner_KIND_B}},
+		SelfMap: map[int32]*Nested{
+			1: {Kind: Nested_Inner_KIND_B},
+			2: {Kind: Nested_Inner_KIND_A},
+		},
+	}
+	patchBytes, err := proto.Marshal(patch)
+	assert.NoError(t, err)
+	patchBytes = append(patchBytes, unk2...)
+
+	// Reset semantics: prutal.Unmarshal matches proto.Unmarshal even without Reset().
+	gotReset := proto.Clone(initial).(*Nested)
+	_, err = proto.Marshal(gotReset)
+	assert.NoError(t, err)
+	wantReset := proto.Clone(initial).(*Nested)
+	assert.NoError(t, prutal.Unmarshal(patchBytes, gotReset))
+	assert.NoError(t, proto.Unmarshal(patchBytes, wantReset))
+	assert.True(t, proto.Equal(wantReset, gotReset))
+	assert.BytesEqual(t, unk2, gotReset.ProtoReflect().GetUnknown())
+
+	// Merge semantics: prutal.UnmarshalMerge matches proto.UnmarshalOptions{Merge: true}.
+	gotMerge := proto.Clone(initial).(*Nested)
+	wantMerge := proto.Clone(initial).(*Nested)
+	assert.NoError(t, prutal.UnmarshalMerge(patchBytes, gotMerge))
+	assert.NoError(t, (proto.UnmarshalOptions{Merge: true}).Unmarshal(patchBytes, wantMerge))
+	assert.True(t, proto.Equal(wantMerge, gotMerge))
+	assert.Equal(t, Nested_Inner_KIND_B, gotMerge.GetKind())
+	assert.Equal(t, int32(11), gotMerge.GetInner().GetDeep().GetV())
+	assert.Equal(t, 2, len(gotMerge.GetInners()))
+	assert.Equal(t, Nested_Inner_KIND_B, gotMerge.GetSelfMap()[1].GetKind())
+	assert.True(t, gotMerge.GetSelfMap()[1].GetInner() == nil)
+	assert.Equal(t, Nested_Inner_KIND_A, gotMerge.GetSelfMap()[2].GetKind())
+	assert.Equal(t, Nested_Inner_KIND_B, gotMerge.GetSelfMap()[3].GetKind())
+	assert.BytesEqual(t, append(append([]byte(nil), unk1...), unk2...), gotMerge.ProtoReflect().GetUnknown())
+
+	// Oneof message merge and oneof case switching match protobuf-go.
+	oneofBase := &Oneofs{Kind: &Oneofs_Msg{Msg: &Scalars{I32: 1}}}
+	oneofPatch := &Oneofs{Kind: &Oneofs_Msg{Msg: &Scalars{S: "x"}}}
+	oneofBaseBytes, err := proto.Marshal(oneofBase)
+	assert.NoError(t, err)
+	oneofPatchBytes, err := proto.Marshal(oneofPatch)
+	assert.NoError(t, err)
+	combinedOneof := append(append([]byte(nil), oneofBaseBytes...), oneofPatchBytes...)
+
+	gotOneofWire := &Oneofs{}
+	wantOneofWire := &Oneofs{}
+	assert.NoError(t, prutal.Unmarshal(combinedOneof, gotOneofWire))
+	assert.NoError(t, proto.Unmarshal(combinedOneof, wantOneofWire))
+	assert.True(t, proto.Equal(wantOneofWire, gotOneofWire))
+
+	gotOneofMerge := proto.Clone(oneofBase).(*Oneofs)
+	wantOneofMerge := proto.Clone(oneofBase).(*Oneofs)
+	assert.NoError(t, prutal.UnmarshalMerge(oneofPatchBytes, gotOneofMerge))
+	assert.NoError(t, (proto.UnmarshalOptions{Merge: true}).Unmarshal(oneofPatchBytes, wantOneofMerge))
+	assert.True(t, proto.Equal(wantOneofMerge, gotOneofMerge))
+	assert.Equal(t, int32(1), gotOneofMerge.GetMsg().GetI32())
+	assert.Equal(t, "x", gotOneofMerge.GetMsg().GetS())
+
+	switchStrBytes, err := proto.Marshal(&Oneofs{Kind: &Oneofs_S{S: "switched"}})
+	assert.NoError(t, err)
+	assert.NoError(t, prutal.UnmarshalMerge(switchStrBytes, gotOneofMerge))
+	assert.NoError(t, (proto.UnmarshalOptions{Merge: true}).Unmarshal(switchStrBytes, wantOneofMerge))
+	assert.True(t, proto.Equal(wantOneofMerge, gotOneofMerge))
+
+	assert.NoError(t, prutal.UnmarshalMerge(oneofPatchBytes, gotOneofMerge))
+	assert.NoError(t, (proto.UnmarshalOptions{Merge: true}).Unmarshal(oneofPatchBytes, wantOneofMerge))
+	assert.True(t, proto.Equal(wantOneofMerge, gotOneofMerge))
+
+	scalarOneofBytes, err := proto.Marshal(&Oneofs{Kind: &Oneofs_I32{I32: 42}})
+	assert.NoError(t, err)
+	gotScalarOneof := &Oneofs{Kind: &Oneofs_I32{I32: 7}}
+	wantScalarOneof := &Oneofs{Kind: &Oneofs_I32{I32: 7}}
+	assert.NoError(t, prutal.UnmarshalMerge(scalarOneofBytes, gotScalarOneof))
+	assert.NoError(t, (proto.UnmarshalOptions{Merge: true}).Unmarshal(scalarOneofBytes, wantScalarOneof))
+	assert.True(t, proto.Equal(wantScalarOneof, gotScalarOneof))
+
+	// Error paths: malformed wire input still resets target on Unmarshal and returns an error.
+	malformed := protowire.AppendTag(nil, 6, protowire.VarintType)
+	errReset := proto.Clone(initial).(*Nested)
+	if err := prutal.Unmarshal(malformed, errReset); err == nil {
+		t.Fatal("expected error from Unmarshal on malformed input")
+	}
+	assert.True(t, proto.Equal(&Nested{}, errReset))
+
+	errMerge := proto.Clone(initial).(*Nested)
+	if err := prutal.UnmarshalMerge(malformed, errMerge); err == nil {
+		t.Fatal("expected error from UnmarshalMerge on malformed input")
+	}
+	assert.True(t, proto.Equal(initial, errMerge))
+}

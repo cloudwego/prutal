@@ -29,12 +29,15 @@ Prutal aims to minimize code generation as much as possible while ensuring seria
 ### Core Message Operations
 
 * ✅ Marshal / Unmarshal — binary wire format
+    - `Unmarshal` resets the target struct before decoding, matching `proto.Unmarshal`.
+    - `UnmarshalMerge` merges without resetting, matching `proto.UnmarshalOptions{Merge: true}` and serving as a zero-reset fast path for freshly allocated structs.
+      For repeated non-pointer struct fields (`[]T`), callers reusing a slice must clear or zero spare capacity (e.g. `s = nil`, `s = s[:0:0]`, or zeroing `s[:cap(s)]` before `s = s[:0]`).
 * ✅ MarshalAppend — append-friendly encoding
 * ✅ Size — compute wire size without marshaling (zero allocation)
 * ✅ Reset
-* ❌ Clone / Merge / Equal
+* ❌ Clone / Merge (message-to-message) / Equal
 * ❌ CheckInitialized — validate required field presence
-* ❌ MarshalOptions / UnmarshalOptions (deterministic output, discard unknown, recursion limits, etc.)
+* ❌ MarshalOptions / UnmarshalOptions (deterministic output, discard unknown, recursion limits, etc.; merge decoding is available via `UnmarshalMerge`)
 
 ### Proto Language Support
 

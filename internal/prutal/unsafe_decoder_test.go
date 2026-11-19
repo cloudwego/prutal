@@ -113,7 +113,7 @@ func TestDecodedZeroSizeSliceGrowth(t *testing.T) {
 		Values []struct{} `protobuf:"bytes,1,rep"`
 	}
 	for i := 0; i < 20; i++ {
-		if err := Unmarshal([]byte{10, 0}, &v); err != nil {
+		if err := UnmarshalMerge([]byte{10, 0}, &v); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -129,7 +129,7 @@ func TestDecodeSliceRejectsCapacityOverflow(t *testing.T) {
 	// Zero-size elements make this capacity valid without a huge allocation.
 	maxInt := int(^uint(0) >> 1)
 	v.Values = make([]struct{}, maxInt/2+1)
-	if err := Unmarshal([]byte{10, 0}, &v); !errors.Is(err, errSliceTooLarge) {
+	if err := UnmarshalMerge([]byte{10, 0}, &v); !errors.Is(err, errSliceTooLarge) {
 		t.Fatalf("error = %v", err)
 	}
 }
@@ -143,7 +143,7 @@ func TestDecodedPointerSliceGrowth(t *testing.T) {
 	}
 	var v message
 	for i := 0; i < 40; i++ {
-		if err := Unmarshal([]byte{10, 3, 10, 1, 'x'}, &v); err != nil {
+		if err := UnmarshalMerge([]byte{10, 3, 10, 1, 'x'}, &v); err != nil {
 			t.Fatal(err)
 		}
 	}

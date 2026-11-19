@@ -99,7 +99,10 @@ type StructDesc struct {
 	mFields0 []*FieldDesc         // direct ID map
 	mFields1 map[int32]*FieldDesc // slow hash map
 
-	Empty unsafe.Pointer // point to a zero struct for encoding list or map
+	Empty       unsafe.Pointer // point to a zero struct for encoding list or map
+	ElemValue   reflect.Value  // reflect.New(rt).Elem(); aliases Empty, only repoint via ReflectValueWithPtr (never write directly)
+	Size        uintptr        // rt.Size(), 0 for empty structs
+	HasPointers bool           // reports whether rt contains any GC-tracked pointers
 
 	finalized bool // for FinalizeFields
 }
@@ -332,9 +335,8 @@ func zeroKindOf(f *FieldDesc) ZeroKind {
 func (f *FieldDesc) checkTypeMatch() error {
 	t := f.T
 	if f.IsOneof() {
-		// oneof fields are never repeated or map in protobuf; the decoder
-		// also allocates a fresh wrapper per wire record, so a slice or map
-		// here would silently keep only the last record on decode
+		// oneof fields are never repeated or map in protobuf, and the decoder
+		// only supports singular scalar or message fields inside a oneof wrapper.
 		if f.Repeated || t.IsSlice || t.Kind == reflect.Map {
 			return fmt.Errorf("unsupported repeated or map field in oneof %s", t.T)
 		}
@@ -453,11 +455,34 @@ func finishParseScope(parsed *bool) {
 	parseScopeStructs = nil
 }
 
+func hasPointers(rt reflect.Type) bool {
+	switch rt.Kind() {
+	case reflect.Pointer, reflect.UnsafePointer, reflect.String,
+		reflect.Slice, reflect.Map, reflect.Interface, reflect.Chan, reflect.Func:
+		return true
+	case reflect.Array:
+		return rt.Len() > 0 && hasPointers(rt.Elem())
+	case reflect.Struct:
+		for i, n := 0, rt.NumField(); i < n; i++ {
+			if hasPointers(rt.Field(i).Type) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func parseStruct(rt reflect.Type) (s *StructDesc, err error) {
 	if s = cachedStructs[rt]; s != nil {
 		return s, nil
 	}
-	s = &StructDesc{Empty: reflect.New(rt).UnsafePointer()}
+	zero := reflect.New(rt)
+	s = &StructDesc{
+		Empty:       zero.UnsafePointer(),
+		ElemValue:   zero.Elem(),
+		Size:        rt.Size(),
+		HasPointers: hasPointers(rt),
+	}
 	cachedStructs[rt] = s // fix cyclic refs
 	if parseScopeStructs != nil {
 		parseScopeStructs[rt] = struct{}{}

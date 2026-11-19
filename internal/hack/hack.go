@@ -95,6 +95,22 @@ func testhack() error {
 		if cap(s) < 5 || len(s) != 1 || s[0] != "a" || sliceTemplate.Cap() != 0 {
 			return errors.New("compatibility issue found: ReflectValueWithPtr (Grow)")
 		}
+
+		type resetStruct struct {
+			N int64
+			s string
+			p *int
+			u []byte
+		}
+		x := 1
+		structTemplate := reflect.New(reflect.TypeOf(resetStruct{})).Elem()
+		dst := resetStruct{N: 7, s: "hi", p: &x, u: []byte{1}}
+		zeroCopy := structTemplate.Interface().(resetStruct)
+		ReflectValueWithPtr(structTemplate, unsafe.Pointer(&dst)).SetZero()
+		if dst.N != 0 || dst.s != "" || dst.p != nil || dst.u != nil ||
+			!reflect.DeepEqual(structTemplate.Interface().(resetStruct), zeroCopy) {
+			return errors.New("compatibility issue found: ReflectValueWithPtr (SetZero)")
+		}
 	}
 
 	{ // Test ReflectValueTypePtr and ReflectTypePtr - verify type pointer extraction
@@ -154,6 +170,21 @@ func testhack() error {
 
 		if IfaceData(unsafe.Pointer(&f0)) != unsafe.Pointer(d0) {
 			return fmt.Errorf("compatibility issue found: IfaceData")
+		}
+
+		var nilIface iFoo
+		if _, ok := IfaceHasTab(unsafe.Pointer(&nilIface), tab); ok {
+			return fmt.Errorf("compatibility issue found: IfaceHasTab nil interface")
+		}
+		typedNil := iFoo((*dog)(nil))
+		if _, ok := IfaceHasTab(unsafe.Pointer(&typedNil), tab); ok {
+			return fmt.Errorf("compatibility issue found: IfaceHasTab typed nil")
+		}
+		if _, ok := IfaceHasTab(unsafe.Pointer(&f2), tab); ok {
+			return fmt.Errorf("compatibility issue found: IfaceHasTab different type")
+		}
+		if got, ok := IfaceHasTab(unsafe.Pointer(&f0), tab); !ok || got != unsafe.Pointer(d0) {
+			return fmt.Errorf("compatibility issue found: IfaceHasTab matching type")
 		}
 	}
 
@@ -285,6 +316,22 @@ type Iface struct {
 // p MUST point to a non-empty interface value.
 func IfaceData(p unsafe.Pointer) unsafe.Pointer {
 	return (*Iface)(p).data
+}
+
+// IfaceHasTab reports whether the non-empty interface at p holds a non-nil
+// concrete value with the given itab, returning its data pointer when true.
+//
+// It compares itab pointer identity, which is unique per (interface, concrete)
+// pair within a single binary (checked by testhack); duplicate itabs across Go
+// plugins miss and allocate a fresh wrapper.
+//
+// p MUST point to a non-empty interface value.
+func IfaceHasTab(p unsafe.Pointer, tab uintptr) (unsafe.Pointer, bool) {
+	i := (*Iface)(p)
+	if i.tab == tab && i.data != nil {
+		return i.data, true
+	}
+	return nil, false
 }
 
 // IfaceTypePtr extracts the type pointer from a non-empty interface value.

@@ -82,16 +82,6 @@ func (d *Decoder) mallocIfPointer(p unsafe.Pointer, t *desc.Type) (ret unsafe.Po
 	return
 }
 
-func resetUnknownFields(s *desc.StructDesc, base unsafe.Pointer) {
-	p := unsafe.Add(base, s.UnknownFieldsOffset)
-	if s.UnknownFieldsPointer {
-		p = *(*unsafe.Pointer)(p)
-	}
-	if p != nil {
-		(*hack.SliceHeader)(p).Len = 0
-	}
-}
-
 func appendToUnknownFields(s *desc.StructDesc, base unsafe.Pointer, b []byte) {
 	p := unsafe.Add(base, s.UnknownFieldsOffset)
 	var x *[]byte
@@ -161,18 +151,21 @@ func (d *Decoder) DecodeStruct(b []byte, base unsafe.Pointer, s *desc.StructDesc
 		t := f.T
 		tag := f.TagType
 		if f.IsOneof() {
-			data := d.Malloc(int(t.Size), t.Align, t.MallocAbiType)
-			hack.IfaceUpdate(p, f.IfaceTab, data)
-			p = data
+			if existing, ok := hack.IfaceHasTab(p, f.IfaceTab); ok {
+				p = existing
+			} else {
+				data := d.Malloc(int(t.Size), t.Align, t.MallocAbiType)
+				hack.IfaceUpdate(p, f.IfaceTab, data)
+				p = data
+			}
 		}
 
 		if t.IsPointer {
-			// A field may occur more than once, and protobuf merges the
-			// occurrences, so decode into the message allocated by the first
-			// one instead of replacing it. Every pointer the decoder writes
-			// into lives in zeroed memory -- a struct allocated by
-			// mallocIfPointer, a oneof wrapper, a grown slice element -- so a
-			// nil pointer reliably marks the first occurrence.
+			// A field may occur more than once, so decode into the value
+			// already pointed to (merging messages, overwriting scalars)
+			// instead of allocating again. Under Unmarshal the target starts
+			// zeroed; under UnmarshalMerge an existing non-nil pointer is
+			// reused in place.
 			if q := *(*unsafe.Pointer)(p); q != nil {
 				p = q
 			} else {
@@ -211,6 +204,10 @@ func (d *Decoder) DecodeStruct(b []byte, base unsafe.Pointer, s *desc.StructDesc
 				}
 			}
 			h.Len++
+			// UnmarshalMerge expects any spare capacity (len < cap) of repeated
+			// non-pointer struct slices ([]T) to be zeroed (e.g. s[:0:0], or
+			// s[:cap(s)] zeroed before s[:0]) so appended elements start clean
+			// without per-element clear overhead on the hot path.
 			p = unsafe.Add(h.Data, uintptr(h.Len-1)*t.Size) // p = &d[len(d-1)]
 			if t.IsPointer {
 				p = d.mallocIfPointer(p, t)

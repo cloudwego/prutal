@@ -942,3 +942,61 @@ func TestBytesPresence(t *testing.T) {
 	// therefore be its first word; hack.testhack checks the same at init
 	assert.Equal(t, uintptr(0), unsafe.Offsetof(hack.SliceHeader{}.Data))
 }
+
+func TestHasPointers(t *testing.T) {
+	type nestedNoPtr struct {
+		A int32
+		B [2]uint64
+		C [0]string
+	}
+	type nestedWithPtr struct {
+		Inner struct {
+			P *int
+		}
+	}
+	type cyclic struct {
+		Next *cyclic
+	}
+
+	assert.False(t, hasPointers(reflect.TypeOf(int32(0))))
+	assert.False(t, hasPointers(reflect.TypeOf(uint64(0))))
+	assert.False(t, hasPointers(reflect.TypeOf(float64(0))))
+	assert.False(t, hasPointers(reflect.TypeOf(false)))
+	assert.False(t, hasPointers(reflect.TypeOf(uintptr(0))))
+	assert.False(t, hasPointers(reflect.TypeOf(struct{}{})))
+	assert.False(t, hasPointers(reflect.TypeOf([4]int32{})))
+	assert.False(t, hasPointers(reflect.TypeOf([0]*int{})))
+	assert.False(t, hasPointers(reflect.TypeOf(nestedNoPtr{})))
+
+	assert.True(t, hasPointers(reflect.TypeOf((*int)(nil))))
+	assert.True(t, hasPointers(reflect.TypeOf(unsafe.Pointer(nil))))
+	assert.True(t, hasPointers(reflect.TypeOf("")))
+	assert.True(t, hasPointers(reflect.TypeOf([]byte(nil))))
+	assert.True(t, hasPointers(reflect.TypeOf(map[int]int(nil))))
+	assert.True(t, hasPointers(reflect.TypeOf((*interface{})(nil)).Elem()))
+	assert.True(t, hasPointers(reflect.TypeOf((chan int)(nil))))
+	assert.True(t, hasPointers(reflect.TypeOf((func())(nil))))
+	assert.True(t, hasPointers(reflect.TypeOf([1]*int{})))
+	assert.True(t, hasPointers(reflect.TypeOf(struct {
+		A int32
+		S string
+	}{})))
+	assert.True(t, hasPointers(reflect.TypeOf(nestedWithPtr{})))
+	assert.True(t, hasPointers(reflect.TypeOf(cyclic{})))
+
+	type scalarOnlyMsg struct {
+		A int32 `protobuf:"varint,1,opt"`
+		B bool  `protobuf:"varint,2,opt"`
+	}
+	sdNoPtr, err := GetOrParse(reflect.ValueOf(&scalarOnlyMsg{}))
+	assert.NoError(t, err)
+	assert.False(t, sdNoPtr.HasPointers)
+
+	sdWithPtr, err := GetOrParse(reflect.ValueOf(&TestMessage{}))
+	assert.NoError(t, err)
+	assert.True(t, sdWithPtr.HasPointers)
+
+	sdOneof, err := GetOrParse(reflect.ValueOf(&TestOneofMessage{}))
+	assert.NoError(t, err)
+	assert.True(t, sdOneof.HasPointers)
+}

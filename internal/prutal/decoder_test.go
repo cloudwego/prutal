@@ -67,7 +67,6 @@ func Benchmark_Decode_Map_Scalar(b *testing.B) {
 	b.SetBytes(int64(len(data)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		*v = TestStruct_Benchmark_Map_Scalar{}
 		if err := Unmarshal(data, v); err != nil {
 			b.Fatal(err)
 		}
@@ -90,7 +89,6 @@ func Benchmark_Decode_Map_String(b *testing.B) {
 	b.SetBytes(int64(len(data)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		*v = TestStruct_Benchmark_Map_String{}
 		if err := Unmarshal(data, v); err != nil {
 			b.Fatal(err)
 		}
@@ -112,7 +110,6 @@ func Benchmark_Decode_Map_Struct(b *testing.B) {
 	b.SetBytes(int64(len(data)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		*v = TestStruct_Benchmark_Map_Struct{}
 		if err := Unmarshal(data, v); err != nil {
 			b.Fatal(err)
 		}

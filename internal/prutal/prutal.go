@@ -19,6 +19,7 @@ package prutal
 import (
 	"errors"
 	"reflect"
+	"unsafe"
 
 	"github.com/cloudwego/prutal/internal/desc"
 	"github.com/cloudwego/prutal/internal/hack"
@@ -73,7 +74,36 @@ func Size(v interface{}) (int, error) {
 	return SizeStruct(rv.UnsafePointer(), s, defaultRecursionMaxDepth)
 }
 
+// resetStruct clears the struct at base before Unmarshal decodes into it.
+// Pointer-free structs zero directly without write barriers, whereas structs
+// with pointers delegate to SetZero (runtime typedmemclr) so GC write barriers
+// stay intact without relying on go:linkname. Callers passing a zeroed or
+// pre-reset struct can use UnmarshalMerge to skip this reset cost.
+func resetStruct(s *desc.StructDesc, base unsafe.Pointer) {
+	if s.Size == 0 {
+		return
+	}
+	if !s.HasPointers {
+		b := unsafe.Slice((*byte)(base), s.Size)
+		for i := range b {
+			b[i] = 0
+		}
+		return
+	}
+	hack.ReflectValueWithPtr(s.ElemValue, base).SetZero()
+}
+
+// Unmarshal resets v and decodes protobuf bytes b into the struct pointed to by v.
 func Unmarshal(b []byte, v interface{}) error {
+	return unmarshal(b, v, true)
+}
+
+// UnmarshalMerge decodes protobuf bytes b into the struct pointed to by v without resetting v first.
+func UnmarshalMerge(b []byte, v interface{}) error {
+	return unmarshal(b, v, false)
+}
+
+func unmarshal(b []byte, v interface{}, reset bool) error {
 	hack.PanicIfHackErr()
 	rv := reflect.ValueOf(v)
 	if rv.Kind() != reflect.Pointer {
@@ -82,19 +112,20 @@ func Unmarshal(b []byte, v interface{}) error {
 	if rv.IsNil() {
 		return errNilPointer
 	}
-	desc, err := desc.GetOrParse(rv)
-	if err != nil {
-		return err
+	s := desc.CacheGet(rv)
+	if s == nil {
+		var err error
+		s, err = desc.GetOrParse(rv)
+		if err != nil {
+			return err
+		}
 	}
 	base := rv.UnsafePointer()
-	// DecodeStruct appends to the unknown fields so that a message occurring
-	// more than once merges. v is caller-provided and may carry leftovers from
-	// a previous Unmarshal, so it is reset here, once, instead.
-	if desc.HasUnknownFields {
-		resetUnknownFields(desc, base)
+	if reset {
+		resetStruct(s, base)
 	}
 	d := decoderPool.Get().(*Decoder)
-	_, err = d.DecodeStruct(b, base, desc, defaultRecursionMaxDepth)
+	_, err := d.DecodeStruct(b, base, s, defaultRecursionMaxDepth)
 	decoderPool.Put(d)
 	return err
 }

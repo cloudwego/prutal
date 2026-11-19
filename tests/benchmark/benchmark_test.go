@@ -77,6 +77,15 @@ func runBenchmark(p testmessage, b *testing.B) {
 			}
 		}
 	})
+	b.Run("decode-prutal-merge", func(b *testing.B) {
+		for range b.N {
+			p.Reset()
+			err = prutal.UnmarshalMerge(buf, p)
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
 
 	// verify Size matches proto.Size
 	if sz, err := prutal.Size(p); err != nil || sz != proto.Size(p) {
