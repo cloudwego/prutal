@@ -55,7 +55,7 @@ type Type struct {
 	Align int
 
 	// for decoder
-	MallocAbiType uintptr
+	MallocAbiType unsafe.Pointer
 
 	K *Type       // for map
 	V *Type       // for pointer, slice or map
@@ -63,6 +63,10 @@ type Type struct {
 
 	// for map only
 	MapTmpVarsPool sync.Pool // for decoder tmp vars
+
+	// for slice only: reflect.New(T).Elem(), repointed by the decoder to let
+	// the runtime grow slices that need GC metadata
+	SliceValue reflect.Value
 
 	finalized bool
 }
@@ -129,7 +133,7 @@ func parseType(rt reflect.Type) (t *Type, err error) {
 		reflect.Map, reflect.Struct:
 		// for these types, we can't use span mem allocator
 		// coz then may contain pointer
-		t.MallocAbiType = hack.ReflectTypePtr(t.T)
+		t.MallocAbiType = hack.ReflectTypePointer(t.T)
 	}
 
 	t.IsPointer = t.Kind == reflect.Pointer
@@ -154,6 +158,9 @@ func parseType(rt reflect.Type) (t *Type, err error) {
 		t.S, err = parseStruct(rt)
 	case reflect.Slice:
 		t.V, err = parseType(rt.Elem())
+		if err == nil && t.IsSlice && t.V.MallocAbiType != nil {
+			t.SliceValue = reflect.New(rt).Elem()
+		}
 	case reflect.Pointer:
 		t.V, err = parseType(rt.Elem())
 		if err == nil && t.V.IsPointer {
@@ -219,6 +226,9 @@ func newTmpMapVarsFunc(rt reflect.Type) func() any {
 	kt := rt.Key()
 	et := rt.Elem()
 	updateFunc := defaultMapUpdateFunc
+	// A zero-sized struct may still require alignment that changes map slot
+	// layout. Only alignment-1 values are interchangeable with struct{}.
+	emptyValue := et.Size() == 0 && et.Align() == 1
 	switch kt.Kind() {
 	case reflect.Int64, reflect.Uint64:
 		switch et.Kind() {
@@ -227,7 +237,7 @@ func newTmpMapVarsFunc(rt reflect.Type) func() any {
 		case reflect.String:
 			updateFunc = mapUpdateFunc_u64_string
 		case reflect.Struct:
-			if et.Size() == 0 {
+			if emptyValue {
 				updateFunc = mapUpdateFunc_u64_empty
 			}
 		}
@@ -238,7 +248,7 @@ func newTmpMapVarsFunc(rt reflect.Type) func() any {
 		case reflect.String:
 			updateFunc = mapUpdateFunc_u32_string
 		case reflect.Struct:
-			if et.Size() == 0 {
+			if emptyValue {
 				updateFunc = mapUpdateFunc_u32_empty
 			}
 		}
@@ -249,7 +259,7 @@ func newTmpMapVarsFunc(rt reflect.Type) func() any {
 		case reflect.String:
 			updateFunc = mapUpdateFunc_string_string
 		case reflect.Struct:
-			if et.Size() == 0 {
+			if emptyValue {
 				updateFunc = mapUpdateFunc_string_empty
 			}
 		}

@@ -41,6 +41,7 @@ Prutal aims to minimize code generation as much as possible while ensuring seria
 * ✅ Scalar types: all 15 protobuf scalar types
 * ✅ Messages and nested messages
 * ✅ Repeated fields
+    - For unpacked input, slice growth returns an error if the requested capacity or allocation size would overflow `int`.
 * ✅ Enums (including `allow_alias`)
 * ✅ Optional / field presence
     - The presence of a `bytes` field is read from the struct tag as `protoc-gen-go` writes it:

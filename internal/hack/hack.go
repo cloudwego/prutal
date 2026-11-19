@@ -75,16 +75,25 @@ func testhack() error {
 
 	{ // Test ReflectValueWithPtr - verify unsafe reflect.Value pointer manipulation
 		m := map[int]string{7: "hello"}
+		replacement := map[int]string{8: "world"}
 		rv := reflect.NewAt(reflect.TypeOf(m), unsafe.Pointer(&m)).Elem()
-		rv1 := ReflectValueWithPtr(rv, unsafe.Pointer(&m))
+		rv1 := ReflectValueWithPtr(rv, unsafe.Pointer(&replacement))
 
-		if p0, p1 := rv.UnsafePointer(), rv1.UnsafePointer(); p0 != p1 {
-			return fmt.Errorf("compatibility issue found: ReflectValueWithPtr %p -> %p m=%p", p0, p1, &m)
+		if rv.UnsafePointer() != reflect.ValueOf(m).UnsafePointer() ||
+			rv1.UnsafePointer() != reflect.ValueOf(replacement).UnsafePointer() {
+			return errors.New("compatibility issue found: ReflectValueWithPtr")
 		}
 
 		m1, ok := rv1.Interface().(map[int]string)
-		if !ok || !reflect.DeepEqual(m, m1) {
+		if !ok || !reflect.DeepEqual(replacement, m1) {
 			return errors.New("compatibility issue found: ReflectValueWithPtr (Interface())")
+		}
+
+		sliceTemplate := reflect.New(reflect.TypeOf([]string(nil))).Elem()
+		s := []string{"a"}
+		ReflectValueWithPtr(sliceTemplate, unsafe.Pointer(&s)).Grow(4)
+		if cap(s) < 5 || len(s) != 1 || s[0] != "a" || sliceTemplate.Cap() != 0 {
+			return errors.New("compatibility issue found: ReflectValueWithPtr (Grow)")
 		}
 	}
 
@@ -148,11 +157,15 @@ func testhack() error {
 		}
 	}
 
-	{ // Test SliceHeader.Data - the encoder tells a present but empty []byte
+	{ // Test SliceHeader - the encoder tells a present but empty []byte
 		// from an unset one by the data pointer, which it reads as the first
 		// word of the header without looking at the type
 		var unset []byte
 		empty := []byte{}
+		if unsafe.Sizeof(SliceHeader{}) != unsafe.Sizeof(unset) ||
+			unsafe.Alignof(SliceHeader{}) != unsafe.Alignof(unset) {
+			return errors.New("compatibility issue found: SliceHeader size or alignment")
+		}
 		if unsafe.Offsetof(SliceHeader{}.Data) != 0 || unsafe.Sizeof(SliceHeader{}.Data) != unsafe.Sizeof(uintptr(0)) {
 			return errors.New("compatibility issue found: SliceHeader.Data is not the first word")
 		}
@@ -161,6 +174,33 @@ func testhack() error {
 		}
 		if (*SliceHeader)(unsafe.Pointer(&empty)).Data == nil {
 			return errors.New("compatibility issue found: empty slice has no data pointer")
+		}
+		b := make([]byte, 3, 5)
+		h := (*SliceHeader)(unsafe.Pointer(&b))
+		if h.Data != unsafe.Pointer(&b[0]) || h.Len != len(b) || h.Cap != cap(b) {
+			return errors.New("compatibility issue found: SliceHeader fields")
+		}
+	}
+
+	{ // StringHeader also reads the shared Data/Len prefix of slice headers.
+		s := "hello"
+		if unsafe.Sizeof(StringHeader{}) != unsafe.Sizeof(s) ||
+			unsafe.Alignof(StringHeader{}) != unsafe.Alignof(s) ||
+			unsafe.Offsetof(StringHeader{}.Data) != unsafe.Offsetof(SliceHeader{}.Data) ||
+			unsafe.Offsetof(StringHeader{}.Len) != unsafe.Offsetof(SliceHeader{}.Len) {
+			return errors.New("compatibility issue found: StringHeader layout")
+		}
+		h := (*StringHeader)(unsafe.Pointer(&s))
+		if h.Data != unsafe.Pointer(unsafe.StringData(s)) || h.Len != len(s) {
+			return errors.New("compatibility issue found: StringHeader fields")
+		}
+	}
+
+	{ // Scalar and packed bool coders read bool values as one byte.
+		f, t := false, true
+		if unsafe.Sizeof(f) != 1 || *(*byte)(unsafe.Pointer(&f)) != 0 ||
+			*(*byte)(unsafe.Pointer(&t)) != 1 {
+			return errors.New("compatibility issue found: bool representation")
 		}
 	}
 
@@ -172,8 +212,8 @@ func testhack() error {
 type hackMapIter struct {
 	m      reflect.Value
 	hitter struct {
-		// k and v are always the 1st two fields of hitter in Go's runtime
-		// This layout is stable and unlikely to change in future Go versions
+		// k and v must be the first two fields of the runtime iterator.
+		// testhack verifies this layout before the codec uses it.
 		k unsafe.Pointer
 		v unsafe.Pointer
 	}
@@ -209,6 +249,7 @@ type rvtype struct {
 // ReflectValueWithPtr creates a reflect.Value by replacing its data pointer.
 // This is equivalent to reflect.NewAt().Elem() but avoids the cost of type lookup.
 // The returned Value shares the same type as rv but points to data at p.
+// rv must hold an indirect value, as returned by reflect.New(t).Elem().
 func ReflectValueWithPtr(rv reflect.Value, p unsafe.Pointer) reflect.Value {
 	(*rvtype)(unsafe.Pointer(&rv)).ptr = p
 	return rv
@@ -231,41 +272,39 @@ type itab struct {
 	typ uintptr // concrete type pointer
 }
 
-// Iface mirrors Go's internal interface{} structure for direct manipulation.
+// Iface mirrors Go's internal non-empty interface structure for direct manipulation.
 // tab is stored as uintptr because itab is never allocated on heap, safe for GC.
 type Iface struct {
 	tab  uintptr        // pointer to itab
 	data unsafe.Pointer // pointer to actual data
 }
 
-// IfaceData extracts the data pointer from an interface{} value.
+// IfaceData extracts the data pointer from a non-empty interface value.
 // This provides direct access to the underlying concrete value without reflection overhead.
 //
-// p MUST point to an interface{} value
+// p MUST point to a non-empty interface value.
 func IfaceData(p unsafe.Pointer) unsafe.Pointer {
 	return (*Iface)(p).data
 }
 
-// IfaceTypePtr extracts the type pointer from an interface{} value.
+// IfaceTypePtr extracts the type pointer from a non-empty interface value.
 // This allows fast type checking and comparison without reflection.
 //
-// p MUST point to an interface{} value
+// p MUST point to a non-empty interface value with a non-nil type table.
 func IfaceTypePtr(p unsafe.Pointer) uintptr {
-	// tab is intentionally stored as uintptr so the synthetic itab is not
-	// treated as a Go heap pointer; its layout is verified during init.
-	//nolint:govet // converting the stored runtime pointer is the purpose of this helper
-	return (*itab)(unsafe.Pointer((*Iface)(p).tab)).typ
+	tab := *(*unsafe.Pointer)(p)
+	return (*itab)(tab).typ
 }
 
-// IfaceUpdate constructs an interface{} value by setting both the type table and data pointer.
-// This allows efficient interface{} construction without reflection overhead.
+// IfaceUpdate constructs a non-empty interface value by setting its type table and data pointer.
+// The table must match the destination interface type and the concrete type at data.
 func IfaceUpdate(p unsafe.Pointer, tab uintptr, data unsafe.Pointer) {
 	(*Iface)(p).tab = tab
 	(*Iface)(p).data = data
 }
 
 // IfaceTab generates the interface table (itab) for concrete type `v` implementing interface `t`.
-// This is used for fast interface{} construction without repeated type assertions.
+// This is used for fast non-empty interface construction without repeated type assertions.
 func IfaceTab(t reflect.Type, v reflect.Type) uintptr {
 	if t.Kind() != reflect.Interface || v.Kind() != reflect.Struct {
 		panic("input type mismatch")
@@ -275,22 +314,24 @@ func IfaceTab(t reflect.Type, v reflect.Type) uintptr {
 	return i.tab
 }
 
-// ReflectValueTypePtr extracts the abi.Type pointer from a reflect.Value.
-// This is used for efficient type mapping in struct descriptors and memory allocation.
-// The returned pointer uniquely identifies the type and can be used for fast type comparisons.
+// ReflectValueTypePtr returns the abi.Type address as an integer for cache keys
+// and type comparisons. Use ReflectTypePointer when the result will be dereferenced.
 func ReflectValueTypePtr(rv reflect.Value) uintptr {
 	return (*rvtype)(unsafe.Pointer(&rv)).abiType
 }
 
-// ReflectTypePtr extracts the abi.Type pointer from a reflect.Type.
-// The *rtype from reflect package shares the same data structure as *abi.Type,
-// allowing direct access to the underlying type information.
+// ReflectTypePtr returns the abi.Type address as an integer for type comparisons.
+// Use ReflectTypePointer when the result will be dereferenced.
 func ReflectTypePtr(rt reflect.Type) uintptr {
-	type iface struct {
-		_    uintptr // type info
-		data uintptr // actual type pointer
-	}
-	return (*iface)(unsafe.Pointer(&rt)).data
+	return uintptr(ReflectTypePointer(rt))
+}
+
+// ReflectTypePointer extracts the abi.Type pointer from a reflect.Type.
+// The *rtype from reflect package shares the same data structure as *abi.Type,
+// allowing direct access to the underlying type information. Keep it as a pointer:
+// types constructed by reflect can live on the heap.
+func ReflectTypePointer(rt reflect.Type) unsafe.Pointer {
+	return (*Iface)(unsafe.Pointer(&rt)).data
 }
 
 // StringHeader mirrors Go's internal string structure for unsafe string operations.

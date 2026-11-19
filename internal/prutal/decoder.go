@@ -17,6 +17,7 @@
 package prutal
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"sync"
@@ -38,17 +39,34 @@ var decoderPool = sync.Pool{
 
 const defaultMinMakeSliceCap = 8
 
+var errSliceTooLarge = errors.New("decoded slice is too large")
+
 type Decoder struct {
 	s span
 }
 
-func (d *Decoder) Malloc(n, align int, abiType uintptr) unsafe.Pointer {
-	if n > defaultDecoderSpanSize/4 || abiType != 0 {
-		// too large, or it needs GC to scan (MallocAbiType != 0 of tType)
-		//nolint:govet // mallocgc expects the runtime type pointer stored in abiType
-		return mallocgc(uintptr(n), unsafe.Pointer(abiType), abiType != 0)
+// Malloc returns zeroed storage with the GC pointer metadata of abiType.
+func (d *Decoder) Malloc(n, align int, abiType unsafe.Pointer) unsafe.Pointer {
+	if n > defaultDecoderSpanSize/4 || abiType != nil {
+		// too large, or it needs GC to scan (MallocAbiType != nil of tType)
+		return mallocgc(uintptr(n), abiType, true)
 	}
-	return d.s.Malloc(n, align) // only for noscan objects like string.Data, []int etc...
+	// Scalar pointers and spare slice capacity are visible to callers, even
+	// when decoding fails before assigning a value.
+	p := d.s.Malloc(n, align) // only for noscan objects like []int etc...
+	b := unsafe.Slice((*byte)(p), n)
+	for i := range b {
+		b[i] = 0
+	}
+	return p
+}
+
+// MallocBytes returns n bytes of noscan storage that the caller overwrites in full.
+func (d *Decoder) MallocBytes(n int) unsafe.Pointer {
+	if n > defaultDecoderSpanSize/4 {
+		return mallocgc(uintptr(n), nil, false)
+	}
+	return d.s.Malloc(n, 1)
 }
 
 func (d *Decoder) mallocIfPointer(p unsafe.Pointer, t *desc.Type) (ret unsafe.Pointer) {
@@ -164,6 +182,7 @@ func (d *Decoder) DecodeStruct(b []byte, base unsafe.Pointer, s *desc.StructDesc
 		}
 
 		if f.Repeated && t.IsSlice {
+			st := t
 			t = t.V
 			if typ == wire.TypeBytes && f.DecodeFunc != nil {
 				// packed input, which a packable field may arrive in whatever
@@ -180,9 +199,16 @@ func (d *Decoder) DecodeStruct(b []byte, base unsafe.Pointer, s *desc.StructDesc
 			}
 			h := (*hack.SliceHeader)(p)
 			if h.Cap == 0 {
-				d.ReallocSlice(h, t, defaultMinMakeSliceCap)
+				if err := d.ReallocSlice(h, st, defaultMinMakeSliceCap); err != nil {
+					return i, err
+				}
 			} else if h.Len == h.Cap {
-				d.ReallocSlice(h, t, 2*h.Cap)
+				if h.Cap > int(^uint(0)>>1)/2 {
+					return i, errSliceTooLarge
+				}
+				if err := d.ReallocSlice(h, st, 2*h.Cap); err != nil {
+					return i, err
+				}
 			}
 			h.Len++
 			p = unsafe.Add(h.Data, uintptr(h.Len-1)*t.Size) // p = &d[len(d-1)]
@@ -266,7 +292,7 @@ func (d *Decoder) DecodeStruct(b []byte, base unsafe.Pointer, s *desc.StructDesc
 			switch t.Kind {
 			case desc.KindBytes:
 				if len(fb) > 0 {
-					data := d.Malloc(len(fb), 1, 0)
+					data := d.MallocBytes(len(fb))
 					*(*[]byte)(p) = unsafe.Slice((*byte)(data), len(fb))
 					copy(*(*[]byte)(p), fb)
 				} else {
@@ -274,7 +300,7 @@ func (d *Decoder) DecodeStruct(b []byte, base unsafe.Pointer, s *desc.StructDesc
 				}
 			case reflect.String:
 				if len(fb) > 0 {
-					data := d.Malloc(len(fb), 1, 0)
+					data := d.MallocBytes(len(fb))
 					copy(unsafe.Slice((*byte)(data), len(fb)), fb)
 					h := (*hack.StringHeader)(p)
 					h.Data = data
@@ -399,7 +425,7 @@ func (d *Decoder) decodeMapKey(b []byte, p unsafe.Pointer, f *desc.FieldDesc) (i
 			return 0, protowire.ParseError(n)
 		}
 		if len(fb) > 0 {
-			data := d.Malloc(len(fb), 1, 0)
+			data := d.MallocBytes(len(fb))
 			copy(unsafe.Slice((*byte)(data), len(fb)), fb)
 			h := (*hack.StringHeader)(p)
 			h.Data = data
@@ -486,7 +512,7 @@ func (d *Decoder) decodeMapValue(b []byte, p unsafe.Pointer, f *desc.FieldDesc, 
 		switch t.Kind {
 		case desc.KindBytes:
 			if len(fb) > 0 {
-				data := d.Malloc(len(fb), 1, 0)
+				data := d.MallocBytes(len(fb))
 				*(*[]byte)(p) = unsafe.Slice((*byte)(data), len(fb))
 				copy(*(*[]byte)(p), fb)
 			} else {
@@ -494,7 +520,7 @@ func (d *Decoder) decodeMapValue(b []byte, p unsafe.Pointer, f *desc.FieldDesc, 
 			}
 		case reflect.String:
 			if len(fb) > 0 {
-				data := d.Malloc(len(fb), 1, 0)
+				data := d.MallocBytes(len(fb))
 				copy(unsafe.Slice((*byte)(data), len(fb)), fb)
 				h := (*hack.StringHeader)(p)
 				h.Data = data
@@ -622,19 +648,31 @@ func (d *Decoder) DecodeMapPair(b []byte, p unsafe.Pointer, f *desc.FieldDesc, t
 	return i, nil
 }
 
-func (d *Decoder) ReallocSlice(h *hack.SliceHeader, t *desc.Type, c int) {
-	if h.Cap >= c {
-		return
+// ReallocSlice grows the capacity of h, a slice of type st, to at least c.
+func (d *Decoder) ReallocSlice(h *hack.SliceHeader, st *desc.Type, c int) error {
+	t := st.V
+	if c < 0 || t.Size != 0 && uintptr(c) > (^uintptr(0)>>1)/t.Size {
+		return errSliceTooLarge
 	}
-	data := d.Malloc(c*int(t.Size), t.Align, t.MallocAbiType)
+	if h.Cap >= c {
+		return nil
+	}
+	if t.MallocAbiType != nil {
+		// Let the runtime grow slices that need GC metadata: it copies
+		// pointers with the write barriers that a byte copy would omit.
+		hack.ReflectValueWithPtr(st.SliceValue, unsafe.Pointer(h)).Grow(c - h.Len)
+		return nil
+	}
+	data := d.Malloc(c*int(t.Size), t.Align, nil)
 	if h.Len > 0 {
 		copyn(data, h.Data, h.Len*int(t.Size))
 	}
 	h.Data = data
 	h.Cap = c
+	return nil
 }
 
-// copyn copies n bytes from src to dst addr.
+// copyn copies n pointer-free bytes from src to dst.
 func copyn(dst, src unsafe.Pointer, n int) {
 	copy(
 		unsafe.Slice((*byte)(dst), n),
