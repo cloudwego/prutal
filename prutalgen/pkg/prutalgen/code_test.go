@@ -21,6 +21,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 
@@ -776,7 +777,7 @@ extend M { required int32 a = 100; }
 }
 
 func TestEdition2023FeaturesValid(t *testing.T) {
-	// Valid for protoc v29.3: imports embedded go_features.proto and uses
+	// Valid for protoc v35.1: imports embedded go_features.proto and uses
 	// standard and Go feature spellings (including file-level DELIMITED when
 	// all generated message fields override LENGTH_PREFIXED, and file-level
 	// API_OPAQUE when all root messages override API_OPEN).
@@ -840,7 +841,7 @@ extend Outer {
 	assert.Equal(t, "API_OPEN", p.Messages[1].effectiveGoAPILevel())
 
 	// Aggregate-first followed by non-overlapping dotted or Go-extension options
-	// is valid in protoc v29.3.
+	// is valid in protoc v35.1.
 	aggOrderCases := []struct {
 		name  string
 		proto string
@@ -1322,6 +1323,31 @@ option features.(pb.go).strip_enum_prefix = STRIP_ENUM_PREFIX_KEEP;
 			want: `"features.(pb.go).strip_enum_prefix" is not available in edition 2023`,
 		},
 		{
+			name: "optimize_mode not in edition 2023",
+			proto: `edition = "2023";
+option go_package = "example.com/ed";
+import "google/protobuf/go_features.proto";
+option features.(pb.go).optimize_mode = SPEED;
+`,
+			want: `"features.(pb.go).optimize_mode" is not available in edition 2023`,
+		},
+		{
+			name: "enforce_naming_style not in edition 2023",
+			proto: `edition = "2023";
+option go_package = "example.com/ed";
+option features.enforce_naming_style = STYLE2024;
+`,
+			want: `"features.enforce_naming_style" is not available in edition 2023`,
+		},
+		{
+			name: "default_symbol_visibility not in edition 2023",
+			proto: `edition = "2023";
+option go_package = "example.com/ed";
+option features.default_symbol_visibility = STRICT;
+`,
+			want: `"features.default_symbol_visibility" is not available in edition 2023`,
+		},
+		{
 			name: "quoted enum value for message_encoding",
 			proto: `edition = "2023";
 option go_package = "example.com/ed";
@@ -1594,4 +1620,24 @@ option features.unknown_feat = YES;
 			expectProtoError(t, tt.proto, tt.want)
 		})
 	}
+}
+
+func TestLoadAllEmbeddedWellKnowns(t *testing.T) {
+	names := make([]string, 0, len(embeddedProtos))
+	for name := range embeddedProtos {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	var b strings.Builder
+	b.WriteString("syntax = \"proto3\";\noption go_package = \"example.com/wkt\";\n")
+	for _, name := range names {
+		b.WriteString("import \"" + name + "\";\n")
+	}
+	b.WriteString("message M { int32 a = 1; }\n")
+	fn := writeFile(t, "wkt.proto", []byte(b.String()))
+	loader := NewLoader([]string{filepath.Dir(fn)}, nil)
+	loader.SetLogger(&testLogger{t})
+	roots := loader.LoadProtos([]string{fn})
+	assert.Equal(t, 1, len(roots))
+	assert.Equal(t, len(names), len(roots[0].Imports))
 }

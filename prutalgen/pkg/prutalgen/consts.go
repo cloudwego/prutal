@@ -43,18 +43,21 @@ const (
 	// editions features
 	// see: https://protobuf.dev/editions/features/
 
-	f_repeated_field_encoding = "features.repeated_field_encoding"
-	f_field_presence          = "features.field_presence"
-	f_enum_type               = "features.enum_type"
-	f_utf8_validation         = "features.utf8_validation"
-	f_message_encoding        = "features.message_encoding"
-	f_json_format             = "features.json_format"
+	f_repeated_field_encoding   = "features.repeated_field_encoding"
+	f_field_presence            = "features.field_presence"
+	f_enum_type                 = "features.enum_type"
+	f_utf8_validation           = "features.utf8_validation"
+	f_message_encoding          = "features.message_encoding"
+	f_json_format               = "features.json_format"
+	f_enforce_naming_style      = "features.enforce_naming_style"
+	f_default_symbol_visibility = "features.default_symbol_visibility"
 
 	// Go edition features (google/protobuf/go_features.proto)
 	f_go_features                   = "features.(pb.go)"
 	f_go_api_level                  = "features.(pb.go).api_level"
 	f_go_legacy_unmarshal_json_enum = "features.(pb.go).legacy_unmarshal_json_enum"
 	f_go_strip_enum_prefix          = "features.(pb.go).strip_enum_prefix"
+	f_go_optimize_mode              = "features.(pb.go).optimize_mode"
 )
 
 const ( // recognized built-in options

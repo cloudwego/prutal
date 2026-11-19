@@ -22,7 +22,7 @@ cd - >/dev/null
 echo -e "building prutalgen ... ${GREEN}done${RESET}"
 
 echo "installing protoc ... "
-PROTOC_VERSION=v29.3
+PROTOC_VERSION=v35.1
 PROTOC_VERSION_OUTPUT="libprotoc ${PROTOC_VERSION#v}"
 PROTOC_VERSION_FILE="${PATH_INCLUDE}/.protoc-version"
 if [[ ! -x "${PATH_BIN}/protoc" ||
@@ -33,7 +33,7 @@ if [[ ! -x "${PATH_BIN}/protoc" ||
   mkdir -p tmp
   cd tmp
   os=`uname -s | sed 's/Darwin/osx/'`
-  arch=`uname -m | sed 's/amd64/x86_64/' | sed 's/arm64/aarch_64/'`
+  arch=`uname -m | sed 's/amd64/x86_64/' | sed 's/arm64/aarch_64/' | sed 's/aarch64/aarch_64/'`
   suffix="${os}-${arch}"
   filename=protoc-${PROTOC_VERSION#v}-${suffix}.zip
   url=https://github.com/protocolbuffers/protobuf/releases/download/${PROTOC_VERSION}/${filename}
@@ -54,6 +54,14 @@ if [[ ! -x "${PATH_BIN}/protoc" ||
   rm -rf ./tmp/
   echo -e "installing protoc ... ${GREEN}done${RESET}"
 fi
+
+for proto in ../prutalgen/pkg/prutalgen/wellknowns/*.proto; do
+  base=$(basename "$proto")
+  if ! cmp -s "$proto" "${PATH_INCLUDE}/google/protobuf/${base}"; then
+    echo -e "${RED}vendored ${proto} differs from pinned protoc ${PROTOC_VERSION} include${RESET}"
+    exit 1
+  fi
+done
 
 # the generators are pinned: their output is what the cases test against,
 # and protoc-gen-go must match the protobuf runtime in go.mod

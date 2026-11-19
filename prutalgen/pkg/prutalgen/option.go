@@ -269,14 +269,19 @@ func (x *protoLoader) parseOptions(name string, val *protoparser.Value) Options 
 				if !hasGoImport {
 					x.Fatalf("%s - option %q requires importing \"google/protobuf/go_features.proto\"", po.pos, o.Name)
 				}
-				if o.Name == f_go_strip_enum_prefix {
+				if o.Name == f_go_strip_enum_prefix || o.Name == f_go_optimize_mode {
 					x.Fatalf("%s - option %q is not available in edition 2023", po.pos, o.Name)
 				}
 				if o.Name != f_go_features && !isKnownGoEdition2023Feature(o.Name) {
 					x.Fatalf("%s - unknown Go feature %q", po.pos, o.Name)
 				}
-			} else if strings.HasPrefix(o.Name, "features.") && !strings.HasPrefix(o.Name, "features.(") && !isKnownEdition2023Feature(o.Name) {
-				x.Fatalf("%s - unknown edition 2023 feature %q", po.pos, o.Name)
+			} else if strings.HasPrefix(o.Name, "features.") && !strings.HasPrefix(o.Name, "features.(") {
+				if o.Name == f_enforce_naming_style || o.Name == f_default_symbol_visibility {
+					x.Fatalf("%s - option %q is not available in edition 2023", po.pos, o.Name)
+				}
+				if !isKnownEdition2023Feature(o.Name) {
+					x.Fatalf("%s - unknown edition 2023 feature %q", po.pos, o.Name)
+				}
 			}
 		}
 		if o.Name == option_packed && isEd2023 {
@@ -358,7 +363,7 @@ func (x *protoLoader) checkFeatureDuplicates(pos protoparser.Pos, existing, inco
 	if len(existing) == 0 || len(incoming) == 0 {
 		return
 	}
-	// Match protoc v29.3 option-merge semantics: an aggregate cannot follow any
+	// Match protoc v35.1 option-merge semantics: an aggregate cannot follow any
 	// previously set option under the same root, while a later dotted option is
 	// allowed as long as its exact leaf was not already set.
 	if hasFeatureOption(existing) && hasOptionNamed(incoming, "features") {

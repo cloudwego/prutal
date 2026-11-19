@@ -54,9 +54,9 @@ Follow the Angular-style commit subject convention required by `CONTRIBUTING.md`
 ## Pinned reference implementation
 
 - Repository: https://github.com/protocolbuffers/protobuf-go
-- Commit: `cdd4c5f7406e82462949c7a65defa9f3029c162d`
-- Parser & lexer reference: `protoc` `v29.3` (matching `tests/run.sh`)
+- Commit: `cdd4c5f7406e82462949c7a65defa9f3029c162d` (`v1.36.12`)
+- Parser & lexer reference: `protoc` `v35.1` (matching `tests/run.sh`)
 
 Use the pinned `protobuf-go` revision to resolve protobuf semantics, wire-format edge cases, error behavior, and generated-code expectations.
-Use `protoc` `v29.3` to resolve `.proto` lexical and grammatical behavior.
+Use `protoc` `v35.1` to resolve `.proto` lexical and grammatical behavior.
 Change either pin only for a compatibility reason.
