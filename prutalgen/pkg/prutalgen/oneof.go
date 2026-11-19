@@ -17,8 +17,8 @@
 package prutalgen
 
 import (
-	"github.com/cloudwego/prutal/prutalgen/internal/parser"
 	"github.com/cloudwego/prutal/prutalgen/internal/protobuf/strs"
+	"github.com/cloudwego/prutal/prutalgen/internal/protoparser"
 )
 
 type Oneof struct {
@@ -42,9 +42,16 @@ func (o *Oneof) FieldType() string {
 	return "is" + o.Msg.GoName + "_" + o.FieldName()
 }
 
-func (x *protoLoader) EnterOneof(c *parser.OneofContext) {
-	o := &Oneof{}
-	o.Name = c.OneofName().GetText()
-	o.Msg = x.currentMsg()
-	o.Msg.Oneofs = append(o.Msg.Oneofs, o)
+func (x *protoLoader) loadOneof(m *Message, decl *protoparser.OneofDecl) {
+	o := &Oneof{
+		Name: decl.Name,
+		Msg:  m,
+	}
+	for _, opt := range decl.Options {
+		o.Options = append(o.Options, x.loadScopedOption(opt, "a oneof")...)
+	}
+	m.Oneofs = append(m.Oneofs, o)
+	for _, fd := range decl.Fields {
+		x.loadOneofField(m, o, fd)
+	}
 }

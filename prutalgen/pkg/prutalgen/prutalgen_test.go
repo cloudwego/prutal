@@ -18,9 +18,13 @@ package prutalgen
 
 import (
 	"fmt"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/cloudwego/prutal/internal/testutils/assert"
 )
@@ -467,4 +471,37 @@ func TestLoader_CyclicImport(t *testing.T) {
 	_ = x.LoadProto("test.proto")
 	t.Fatal("never goes here. logger Fatalf in LoadProto")
 
+}
+
+func TestLoader_InvalidUTF8(t *testing.T) {
+	dir := t.TempDir()
+	raw := append([]byte("syntax = \"proto3\";\noption go_package = \"example.com/nonutf8\";\n// "),
+		0xD6, 0xD0, 0xCE, 0xC4, '\n')
+	raw = append(raw, []byte("message M {\n  string s = 1 [(desc) = \"")...)
+	raw = append(raw, 0xD6, 0xD0, 0xCE, 0xC4)
+	raw = append(raw, []byte("\"];\n}\n")...)
+
+	fn := writeFileUnderDir(t, dir, "test.proto", raw)
+	x := NewLoader([]string{dir}, nil)
+	x.SetLogger(&testLogger{t})
+	pp := x.LoadProto(fn)
+	assert.Equal(t, 1, len(pp))
+
+	p := pp[0]
+	assert.True(t, utf8.ValidString(p.Messages[0].HeadComment))
+	assert.True(t, strings.Contains(p.Messages[0].HeadComment, "\uFFFD"))
+
+	optVal, ok := p.Messages[0].Fields[0].Options.Get("(desc)")
+	assert.True(t, ok)
+	assert.True(t, utf8.ValidString(optVal))
+	assert.True(t, strings.Contains(optVal, "\uFFFD"))
+
+	g := NewGoCodeGen()
+	assert.NoError(t, g.Gen(p, GenBySourceRelative, dir))
+
+	out, err := os.ReadFile(g.SourcePath(p, GenBySourceRelative, dir, ".pb.go"))
+	assert.NoError(t, err)
+	assert.True(t, utf8.Valid(out))
+	_, err = parser.ParseFile(token.NewFileSet(), "", out, parser.AllErrors)
+	assert.NoError(t, err)
 }

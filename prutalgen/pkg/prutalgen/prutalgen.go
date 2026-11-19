@@ -22,25 +22,18 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 
-	"github.com/cloudwego/prutal/prutalgen/internal/antlr"
-
-	"github.com/cloudwego/prutal/prutalgen/internal/parser"
+	"github.com/cloudwego/prutal/prutalgen/internal/protoparser"
 )
 
 type protoLoader struct {
-	*parser.BaseProtobufListener
-
 	includes    []string
 	proto2gopkg map[string]string
 
 	protos []*Proto // all proto files appended by order
 
-	// state vars
-	streams    []*streamContext // mainly for comment
 	protostack []*Proto
-	msgstack   []*Message
-	enum       *Enum // current enum
 
 	l LoggerIface
 }
@@ -240,10 +233,7 @@ func (x *protoLoader) loadRoots(files []string) []*Proto {
 
 func (x *protoLoader) reset() {
 	x.protos = nil
-	x.streams = nil
 	x.protostack = nil
-	x.msgstack = nil
-	x.enum = nil
 }
 
 func (x *protoLoader) Fatalf(fm string, aa ...any) {
@@ -270,26 +260,8 @@ func (x *protoLoader) Infof(fm string, aa ...any) {
 	}
 }
 
-func (x *protoLoader) currentStream() *streamContext {
-	return last(x.streams)
-}
-
 func (x *protoLoader) currentProto() *Proto {
 	return last(x.protostack)
-}
-
-func (x *protoLoader) currentMsg() *Message {
-	return last(x.msgstack)
-}
-
-func (x *protoLoader) currentOneof() *Oneof {
-	m := x.currentMsg()
-	return last(m.Oneofs)
-}
-
-func (x *protoLoader) currentService() *Service {
-	p := x.currentProto()
-	return last(p.Services)
 }
 
 func (x *protoLoader) getByName(name string, stack bool) *Proto {
@@ -340,11 +312,11 @@ func (x *protoLoader) loadProto(file string, root bool) *Proto {
 	x.protos = append(x.protos, p)
 
 	x.Infof("parsing")
-	is, err := antlr.NewFileStream(p.ProtoFile)
+	data, err := os.ReadFile(p.ProtoFile)
 	if err != nil {
 		x.Fatalf("open file err: %s", err)
 	}
-	x.parseInput(is)
+	x.parseInput(data)
 	return p
 }
 
@@ -365,31 +337,27 @@ func (x *protoLoader) loadEmbeddedProto(file string) *Proto {
 	push(&x.protostack, p)
 	defer pop(&x.protostack)
 	x.protos = append(x.protos, p)
-	is := antlr.NewIoStream(bytes.NewReader(data))
-	x.parseInput(is)
+	x.parseInput(data)
 	return p
 }
 
-func (x *protoLoader) parseInput(in antlr.CharStream) {
+func (x *protoLoader) parseInput(data []byte) {
 	p := x.currentProto()
-
-	lexer := parser.NewProtobufLexer(in)
-	s := antlr.NewCommonTokenStream(lexer, antlr.TokenDefaultChannel)
-	push(&x.streams, newStreamContext(s))
-	defer pop(&x.streams)
-
-	e := &errorListener{l: x.l}
-	ps := parser.NewProtobufParser(s)
-	ps.RemoveErrorListeners()
-	ps.AddErrorListener(e)
-	proto := ps.Proto()
-	if e.HasError() {
-		x.Fatalf("error occurred during parsing proto file")
+	if !utf8.Valid(data) {
+		// Replace invalid UTF-8 sequences so comments and option values remain valid UTF-8.
+		data = bytes.ToValidUTF8(data, []byte("\uFFFD"))
 	}
-	antlr.ParseTreeWalkerDefault.Walk(x, proto)
 
-	comment := x.consumeHeadComment(proto)
-	p.Directives.Parse(comment)
+	file, errs := protoparser.Parse(data)
+	if len(errs) > 0 {
+		for _, e := range errs {
+			x.l.Printf("[ERROR] syntax error at line %d column %d - %s\n", e.Pos.Line, e.Pos.Column, e.Msg)
+		}
+		x.Fatalf("error occurred during parsing proto file: %s", errs[0].Msg)
+	}
+	x.loadFile(p, file)
+
+	p.Directives.Parse(file.HeadComment)
 
 	gopkg, _ := p.Options.Get("go_package")
 	p.setGoPackageOptions(gopkg, p.goPackageFromM)
@@ -398,27 +366,29 @@ func (x *protoLoader) parseInput(in antlr.CharStream) {
 	}
 }
 
-func (x *protoLoader) consumeHeadComment(c antlr.ParserRuleContext) string {
-	s := x.currentStream()
-	return s.consumeHeadComment(c)
+func (x *protoLoader) loadFile(p *Proto, file *protoparser.File) {
+	if file.Syntax != nil {
+		x.loadSyntax(p, file.Syntax)
+	}
+	for _, pkg := range file.Packages {
+		x.loadPackage(p, pkg)
+	}
+	for _, imp := range file.Imports {
+		x.loadImport(p, imp)
+	}
+	for _, opt := range file.Options {
+		x.loadFileOption(p, opt)
+	}
+	for _, decl := range file.Decls {
+		switch d := decl.(type) {
+		case *protoparser.MessageDecl:
+			x.loadMessage(p, nil, d)
+		case *protoparser.EnumDecl:
+			x.loadEnum(p, nil, d)
+		case *protoparser.ExtendDecl:
+			x.loadExtend(d)
+		case *protoparser.ServiceDecl:
+			x.loadService(p, d)
+		}
+	}
 }
-
-func (x *protoLoader) consumeInlineComment(c antlr.ParserRuleContext) string {
-	s := x.currentStream()
-	return s.consumeInlineComment(c)
-}
-
-type errorListener struct {
-	*antlr.DefaultErrorListener
-	hasError bool
-
-	l LoggerIface // from protoLoader
-}
-
-func (x *errorListener) SyntaxError(_ antlr.Recognizer, _ any,
-	line, column int, msg string, _ antlr.RecognitionException) {
-	x.hasError = true
-	x.l.Printf("[ERROR] syntax error at line %d column %d - %s\n", line, column, msg)
-}
-
-func (x *errorListener) HasError() bool { return x.hasError }

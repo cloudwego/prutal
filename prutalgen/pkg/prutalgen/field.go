@@ -20,11 +20,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/cloudwego/prutal/prutalgen/internal/antlr"
-
-	"github.com/cloudwego/prutal/prutalgen/internal/parser"
 	"github.com/cloudwego/prutal/prutalgen/internal/protobuf/strs"
 	"github.com/cloudwego/prutal/prutalgen/internal/protobuf/text"
+	"github.com/cloudwego/prutal/prutalgen/internal/protoparser"
 )
 
 type Field struct {
@@ -48,7 +46,6 @@ type Field struct {
 
 	Oneof *Oneof // if not nil, it's from oneof
 	Msg   *Message
-	rule  antlr.ParserRuleContext
 
 	// oneofTypeSuffix is appended to the oneof wrapper struct name to
 	// resolve collisions with sibling nested message/enum GoNames. Only
@@ -321,95 +318,68 @@ func (f *Field) OneofStructName() string {
 	return f.Msg.GoName + "_" + f.GoName + f.oneofTypeSuffix
 }
 
-type fieldContext interface {
-	antlr.ParserRuleContext
-
-	FieldType() parser.IFieldTypeContext
-	FieldName() parser.IFieldNameContext
-	FieldNumber() parser.IFieldNumberContext
-	FieldOptions() parser.IFieldOptionsContext
-}
-
-type fieldWithKeyTypeContext interface {
-	fieldContext
-
-	KeyType() parser.IKeyTypeContext
-}
-
-type noKeyTypeContext struct{ fieldContext }
-
-func (noKeyTypeContext) KeyType() parser.IKeyTypeContext { return nil }
-
-func (x *protoLoader) parseFieldOptions(c parser.IFieldOptionsContext) Options {
-	if c == nil {
+func (x *protoLoader) parseFieldOptions(opts []*protoparser.OptionDecl) Options {
+	if len(opts) == 0 {
 		return nil
 	}
 	var options Options
-	for _, o := range c.AllFieldOption() {
-		options = append(options, x.parseOptions(o.OptionName().GetText(), o.Constant())...)
+	for _, o := range opts {
+		options = append(options, x.parseOptions(o.Name, o.Value)...)
 	}
 	return options
 }
 
-func (x *protoLoader) newField(c fieldWithKeyTypeContext) *Field {
-	ft := c.FieldType()
+func (x *protoLoader) checkFieldLabel(label string, pos protoparser.Pos) {
+	switch label {
+	case "required":
+		if x.currentProto().Edition != editionProto2 {
+			x.Fatalf("%s - `required` keyword only available for proto2", pos)
+		}
+	case "optional":
+		if x.currentProto().IsEdition2023() {
+			x.Fatalf("%s - `optional` keyword is not available in editions", pos)
+		}
+	}
+}
+
+func (x *protoLoader) newFieldFromDecl(decl *protoparser.FieldDecl) *Field {
 	f := &Field{
-		HeadComment: x.consumeHeadComment(c), InlineComment: x.consumeInlineComment(c),
-		Name: c.FieldName().GetText(),
-		Type: &Type{Name: ft.GetText(), rule: ft},
-		rule: c,
+		HeadComment:   decl.HeadComment,
+		InlineComment: decl.InlineComment,
+		Name:          decl.Name,
+		Type:          &Type{Name: decl.Type, pos: decl.TypePos},
 	}
 	f.Type.f = f
 	f.Directives.Parse(f.HeadComment, f.InlineComment)
 
-	if kt := c.KeyType(); kt != nil {
-		f.Key = &Type{Name: kt.GetText(), rule: kt}
-	}
-	fieldn := c.FieldNumber()
-	num, ok := text.UnmarshalI32(fieldn.GetText())
+	num, ok := text.UnmarshalI32(decl.Number)
 	if !ok {
-		x.Fatalf("%s - parse field number %q err", getTokenPos(fieldn), fieldn.GetText())
+		x.Fatalf("%s - parse field number %q err", decl.NumberPos, decl.Number)
 	}
 	f.FieldNumber = num
-	f.Options = x.parseFieldOptions(c.FieldOptions())
+	f.Options = x.parseFieldOptions(decl.Options)
 	return f
 }
 
-func (x *protoLoader) ExitField(c *parser.FieldContext) {
-	label := c.FieldLabel()
-	if label != nil {
-		switch label.GetText() {
-		case "required":
-			if x.currentProto().Edition != editionProto2 {
-				x.Fatalf("%s - `required` keyword only available for proto2", getTokenPos(label))
-			}
-		case "optional":
-			if x.currentProto().IsEdition2023() {
-				x.Fatalf("%s - `optional` keyword is not available in editions", getTokenPos(label))
-			}
-		}
+func (x *protoLoader) loadExtend(decl *protoparser.ExtendDecl) {
+	for _, fd := range decl.Fields {
+		x.checkFieldLabel(fd.Label, fd.LabelPos)
+		options := x.parseFieldOptions(fd.Options)
+		x.rejectFieldPresenceOption(fd.Pos, options, "an extension field")
 	}
-	switch getRuleIndex(c.GetParent()) {
-	case parser.ProtobufParserRULE_extendDef: // only for protoc
-		options := x.parseFieldOptions(c.FieldOptions())
-		x.rejectFieldPresenceOption(c, options, "an extension field")
-		return
-	}
-	// fieldLabel? type_ fieldName EQ fieldNumber (LB fieldOptions RB)? SEMI
-	f := x.newField(noKeyTypeContext{c})
-	if label != nil {
-		switch label.GetText() {
-		case "repeated":
-			f.Repeated = true
+}
 
-		case "required":
-			f.Required = true
-
-		case "optional":
-			f.Optional = true
-		}
+func (x *protoLoader) loadField(m *Message, decl *protoparser.FieldDecl) {
+	x.checkFieldLabel(decl.Label, decl.LabelPos)
+	f := x.newFieldFromDecl(decl)
+	switch decl.Label {
+	case "repeated":
+		f.Repeated = true
+	case "required":
+		f.Required = true
+	case "optional":
+		f.Optional = true
 	}
-	m := x.currentMsg()
 	m.Fields = append(m.Fields, f)
 	f.Msg = m
 	if m.Proto.IsEdition2023() {
@@ -420,22 +390,31 @@ func (x *protoLoader) ExitField(c *parser.FieldContext) {
 	}
 }
 
-func (x *protoLoader) ExitOneofField(c *parser.OneofFieldContext) {
-	// type_ fieldName EQ fieldNumber (LB fieldOptions RB)? SEMI
-	f := x.newField(noKeyTypeContext{c})
-	m := x.currentMsg()
-
-	// oneof fields are normal fields with oneof define.
-	f.Oneof = last(m.Oneofs)
-	f.Oneof.Fields = append(f.Oneof.Fields, f)
+func (x *protoLoader) loadOneofField(m *Message, o *Oneof, decl *protoparser.FieldDecl) {
+	f := x.newFieldFromDecl(decl)
+	f.Oneof = o
+	o.Fields = append(o.Fields, f)
 	f.Msg = m
 	m.Fields = append(m.Fields, f)
 }
 
-func (x *protoLoader) ExitMapField(c *parser.MapFieldContext) {
-	// MAP LT keyType COMMA type_ GT fieldName EQ fieldNumber (LB fieldOptions RB)? SEMI
-	f := x.newField(c)
-	m := x.currentMsg()
+func (x *protoLoader) loadMapField(m *Message, decl *protoparser.MapFieldDecl) {
+	f := &Field{
+		HeadComment:   decl.HeadComment,
+		InlineComment: decl.InlineComment,
+		Name:          decl.Name,
+		Key:           &Type{Name: decl.KeyType, pos: decl.KeyPos},
+		Type:          &Type{Name: decl.ValType, pos: decl.ValPos},
+		Msg:           m,
+	}
+	f.Type.f = f
+	f.Directives.Parse(f.HeadComment, f.InlineComment)
+
+	num, ok := text.UnmarshalI32(decl.Number)
+	if !ok {
+		x.Fatalf("%s - parse field number %q err", decl.NumberPos, decl.Number)
+	}
+	f.FieldNumber = num
+	f.Options = x.parseFieldOptions(decl.Options)
 	m.Fields = append(m.Fields, f)
-	f.Msg = m
 }

@@ -9,8 +9,6 @@ header:
 
   # third-party code that must keep its original license header
   paths-ignore:
-    - 'prutalgen/internal/antlr'
-    - 'prutalgen/internal/parser'
     - 'prutalgen/internal/protobuf'
     - 'internal/protowire/wire.go'
     - 'internal/protowire/wire_test.go'

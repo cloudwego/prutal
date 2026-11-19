@@ -131,3 +131,39 @@ func TestValidateProtoSymbols(t *testing.T) {
 	}}
 	assert.ErrorContains(t, validateProtoSymbols([]*Proto{a}), `enum value "shared.M.VALUE"`)
 }
+
+func TestLoader_SyntaxEditionValidation(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		payload string
+	}{
+		{"syntax with edition year", `syntax = "2023"; option go_package = "example.com/bad";`},
+		{"edition with proto3", `edition = "proto3"; option go_package = "example.com/bad";`},
+		{"edition with proto2", `edition = "proto2"; option go_package = "example.com/bad";`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			expectProtoError(t, tc.payload, "unknown syntax/edition")
+		})
+	}
+}
+
+func TestLoader_JoinedStringLiterals(t *testing.T) {
+	dir := t.TempDir()
+	_ = writeFileUnderDir(t, dir, "sub.proto", []byte(`
+syntax = "proto3";
+option go_package = "example.com/" "sub";
+message Sub {}
+`))
+	fn := writeFileUnderDir(t, dir, "main.proto", []byte(`
+syntax = "proto3";
+import "su" "b.proto";
+option go_package = "example.com/" "main";
+message Main { Sub s = 1; }
+`))
+	x := NewLoader([]string{dir}, nil)
+	x.SetLogger(&testLogger{t})
+	pp := x.LoadProto(fn)
+	assert.Equal(t, 2, len(pp))
+	assert.Equal(t, "example.com/main", pp[0].GoImport)
+	assert.Equal(t, "example.com/sub", pp[1].GoImport)
+}

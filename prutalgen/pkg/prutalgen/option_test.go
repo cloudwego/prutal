@@ -107,6 +107,7 @@ option go_package = "example.com/features";
 option features = {
   enum_type: CLOSED
   repeated_field_encoding: PACKED;
+  [pb.go]: { api_level: API_OPEN, s: "ok\n", items: ["a", "b"] }
 };
 `)
 
@@ -114,4 +115,21 @@ option features = {
 	assert.True(t, p.Options.Is(f_repeated_field_encoding, "PACKED"))
 	_, ok := p.Options.Get("features")
 	assert.True(t, ok, "aggregate option must be preserved")
+	_, hasExt := p.Options.Get("features.pb.go")
+	assert.False(t, hasExt)
+}
+
+func TestLoaderOptionBlockAndListEscapes(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		payload string
+	}{
+		{"block string escape", `option go_package = "example.com/opt"; option (o) = { s: "\q" };`},
+		{"list string escape", `option go_package = "example.com/opt"; option (o) = { list: ["\q"] };`},
+		{"features ext string escape", `edition = "2023"; option go_package = "example.com/opt"; option features = { [pb.go]: { s: "\q" } };`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			expectProtoError(t, tc.payload, "option syntax err")
+		})
+	}
 }

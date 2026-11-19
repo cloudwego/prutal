@@ -20,8 +20,8 @@ import (
 	"path"
 	"strings"
 
-	"github.com/cloudwego/prutal/prutalgen/internal/antlr"
 	"github.com/cloudwego/prutal/prutalgen/internal/protobuf/strs"
+	"github.com/cloudwego/prutal/prutalgen/internal/protoparser"
 )
 
 type Type struct {
@@ -38,7 +38,7 @@ type Type struct {
 	m *Method
 
 	// for logging when resolve
-	rule antlr.ParserRuleContext
+	pos protoparser.Pos
 }
 
 // GoName returns the GoName of underlying type
@@ -200,11 +200,7 @@ func (t *Type) setResolvedType(current, owner *Proto, typ any) {
 }
 
 func (t *Type) typeNotFound(p *Proto) {
-	line := 0
-	if t.rule != nil && t.rule.GetStart() != nil {
-		line = t.rule.GetStart().GetLine()
-	}
-	p.Fatalf("line %d: type %q not found.", line, t.Name)
+	p.Fatalf("line %d: type %q not found.", t.pos.Line, t.Name)
 }
 
 func findVisibleType(protos []*Proto, fullName string) (any, *Proto) {

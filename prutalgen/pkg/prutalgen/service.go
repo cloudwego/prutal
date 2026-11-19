@@ -21,8 +21,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/cloudwego/prutal/prutalgen/internal/parser"
 	"github.com/cloudwego/prutal/prutalgen/internal/protobuf/strs"
+	"github.com/cloudwego/prutal/prutalgen/internal/protoparser"
 )
 
 type Service struct {
@@ -87,50 +87,33 @@ func (r *Method) resolve() {
 	r.Return.resolve(false)
 }
 
-func (x *protoLoader) EnterServiceDef(c *parser.ServiceDefContext) {
-	// SERVICE serviceName LC serviceElement* RC
+func (x *protoLoader) loadService(p *Proto, decl *protoparser.ServiceDecl) {
 	s := &Service{
-		HeadComment: x.consumeHeadComment(c), InlineComment: x.consumeInlineComment(c),
-		Name:  c.ServiceName().GetText(),
-		Proto: x.currentProto(),
+		HeadComment:   decl.HeadComment,
+		InlineComment: decl.InlineComment,
+		Name:          decl.Name,
+		Proto:         p,
 	}
 	s.Directives.Parse(s.HeadComment, s.InlineComment)
-
-	p := x.currentProto()
-	p.Services = append(p.Services, s)
-}
-
-func (x *protoLoader) EnterRpc(c *parser.RpcContext) {
-	// rpc = "rpc" rpcName "(" [ "stream" ] messageType ")" "returns" "(" [ "stream" ]
-	//	messageType ")" (( "{" {option | emptyStatement } "}" ) | ";")
-	s := x.currentService()
-	m := &Method{
-		HeadComment: x.consumeHeadComment(c), InlineComment: x.consumeInlineComment(c),
-		Name:    c.RpcName().GetText(),
-		Service: s,
+	for _, opt := range decl.Options {
+		s.Options = append(s.Options, x.loadScopedOption(opt, "a service")...)
 	}
-	m.Directives.Parse(m.HeadComment, m.InlineComment)
-	s.Methods = append(s.Methods, m)
-}
-
-func (x *protoLoader) ExitRpc(c *parser.RpcContext) {
-	m := last(x.currentService().Methods)
-	tt := c.AllMessageType() // 0 for request, 1 for return
-	for _, s := range c.AllSTREAM() {
-		if pos := s.GetSymbol().GetStart(); pos < tt[0].GetStart().GetStart() {
-			m.RequestStream = true
-		} else if pos < tt[1].GetStart().GetStart() {
-			m.ReturnStream = true
+	for _, md := range decl.Methods {
+		m := &Method{
+			HeadComment:   md.HeadComment,
+			InlineComment: md.InlineComment,
+			Name:          md.Name,
+			RequestStream: md.RequestStream,
+			ReturnStream:  md.ReturnStream,
+			Service:       s,
 		}
+		m.Directives.Parse(m.HeadComment, m.InlineComment)
+		m.Request = &Type{Name: md.RequestType, pos: md.RequestPos, m: m}
+		m.Return = &Type{Name: md.ReturnType, pos: md.ReturnPos, m: m}
+		for _, opt := range md.Options {
+			m.Options = append(m.Options, x.loadScopedOption(opt, "an RPC")...)
+		}
+		s.Methods = append(s.Methods, m)
 	}
-	m.Request = &Type{
-		Name: tt[0].GetText(),
-		rule: tt[0],
-		m:    m,
-	}
-	m.Return = &Type{
-		Name: tt[1].GetText(),
-		rule: tt[1],
-		m:    m,
-	}
+	p.Services = append(p.Services, s)
 }

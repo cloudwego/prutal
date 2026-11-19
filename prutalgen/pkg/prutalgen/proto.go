@@ -24,9 +24,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/cloudwego/prutal/prutalgen/internal/parser"
 	"github.com/cloudwego/prutal/prutalgen/internal/protobuf/strs"
-	"github.com/cloudwego/prutal/prutalgen/internal/protobuf/text"
+	"github.com/cloudwego/prutal/prutalgen/internal/protoparser"
 )
 
 // Import ...
@@ -446,50 +445,47 @@ func (p *Proto) verify() error {
 	return errors.Join(errs...)
 }
 
-// listeners
+// AST loaders
 
-func (x *protoLoader) ExitEdition(c *parser.EditionContext) {
-	p := x.currentProto()
-	s := c.StrLit()
-	v, err := text.UnmarshalString(s.GetText())
+func (x *protoLoader) loadSyntax(p *Proto, decl *protoparser.SyntaxDecl) {
+	v, err := unmarshalStringParts(decl.Value.Parts)
 	if err != nil {
-		x.Fatalf("%s : %s", getTokenPos(s), err)
+		x.Fatalf("%s : %s", decl.Value.Pos, err)
 	}
-	switch v {
-	case editionProto2, editionProto3, edition2023:
+	if decl.IsEdition {
+		if v == edition2023 {
+			p.Edition = v
+			return
+		}
+	} else if v == editionProto2 || v == editionProto3 {
 		p.Edition = v
-	default:
-		x.Fatalf("%s : unknown syntax/edition %q", getTokenPos(s), v)
+		return
 	}
+	x.Fatalf("%s : unknown syntax/edition %q", decl.Value.Pos, v)
 }
 
-func (x *protoLoader) ExitPackageStatement(c *parser.PackageStatementContext) {
-	p := x.currentProto()
+func (x *protoLoader) loadPackage(p *Proto, decl *protoparser.PackageDecl) {
 	if p.Package != "" {
-		x.Fatalf("%s - Multiple package definitions.", getTokenPos(c))
+		x.Fatalf("%s - Multiple package definitions.", decl.Pos)
 	}
-	p.Package = c.FullIdent().GetText()
+	p.Package = decl.Name
 }
 
-func (x *protoLoader) ExitImportStatement(c *parser.ImportStatementContext) {
-	// IMPORT (WEAK | PUBLIC)? strLit SEMI
-	p := x.currentProto()
-	if len(getText(c.WEAK())) > 0 {
-		x.Warnf("%s - weak import is not supported", getTokenPos(c))
+func (x *protoLoader) loadImport(p *Proto, decl *protoparser.ImportDecl) {
+	if decl.Kind == protoparser.ImportWeak {
+		x.Warnf("%s - weak import is not supported", decl.Pos)
 	}
-	imp := &Import{}
-	if len(getText(c.PUBLIC())) > 0 {
-		imp.Public = true
+	imp := &Import{
+		Public: decl.Kind == protoparser.ImportPublic,
 	}
-	s := c.StrLit().GetText()
-	importpath, err := text.UnmarshalString(s)
+	importpath, err := unmarshalStringParts(decl.Path.Parts)
 	if err != nil {
-		x.Fatalf("%s - import syntax err: %s", getTokenPos(c), err)
+		x.Fatalf("%s - import syntax err: %s", decl.Pos, err)
 	}
 	imp.Proto = x.loadProto(importpath, false)
 	for _, previous := range p.Imports {
 		if previous.Proto == imp.Proto {
-			x.Fatalf("%s - import %q was listed twice", getTokenPos(c), importpath)
+			x.Fatalf("%s - import %q was listed twice", decl.Pos, importpath)
 		}
 	}
 	p.Imports = append(p.Imports, imp)

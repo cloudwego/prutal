@@ -20,8 +20,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/cloudwego/prutal/prutalgen/internal/antlr"
-	"github.com/cloudwego/prutal/prutalgen/internal/parser"
+	"github.com/cloudwego/prutal/prutalgen/internal/protoparser"
 )
 
 type Option struct {
@@ -60,97 +59,89 @@ func (oo Options) Is(name string, value string) bool {
 	return ok && s == value
 }
 
+func (x *protoLoader) validateOptionValue(val *protoparser.Value) {
+	switch val.Kind {
+	case protoparser.ValueString:
+		if _, err := unmarshalStringParts(val.StringParts); err != nil {
+			x.Fatalf("%s - option syntax err: %s", val.Pos, err)
+		}
+	case protoparser.ValueBlock:
+		for _, f := range val.Fields {
+			x.validateOptionValue(f.Value)
+		}
+	case protoparser.ValueList:
+		for _, elem := range val.List {
+			x.validateOptionValue(elem)
+		}
+	}
+}
+
 // parseOptions returns the option name = constant as parsed, and for the
 // aggregate form of the editions features, "features = { a: X, b: Y }", the
 // entries "features.a" and "features.b" on top, so that a feature is found by
 // its dotted name however it was spelled. Every value is verified.
-func (x *protoLoader) parseOptions(name string, c parser.IConstantContext) Options {
-	v, err := unmarshalConst(c.GetText())
+func (x *protoLoader) parseOptions(name string, val *protoparser.Value) Options {
+	v, err := unmarshalValue(val)
 	if err != nil {
-		x.Fatalf("%s - option syntax err: %s", getTokenPos(c), err)
+		x.Fatalf("%s - option syntax err: %s", val.Pos, err)
 	}
 
 	// name may include extensions like (gogoproto.goproto_unrecognized_all)
 	// we ignore parsing it, coz it's only used by protoc.
 	// but we will keep it for optimization cases like `[(gogoproto.nullable) = false];`
 	options := Options{{Name: name, Value: v}}
-	if name == "features" {
-		if block := c.BlockLit(); block != nil {
-			idents := block.AllIdent()
-			values := block.AllConstant()
-			for i, ident := range idents {
-				v, err := unmarshalConst(values[i].GetText())
-				if err != nil {
-					x.Fatalf("%s - feature option syntax err: %s", getTokenPos(values[i]), err)
-				}
-				options = append(options, &Option{Name: "features." + ident.GetText(), Value: v})
+	if name == "features" && val.Kind == protoparser.ValueBlock {
+		for _, f := range val.Fields {
+			if f.IsExtension {
+				continue
 			}
+			fv, err := unmarshalValue(f.Value)
+			if err != nil {
+				x.Fatalf("%s - feature option syntax err: %s", f.Value.Pos, err)
+			}
+			options = append(options, &Option{Name: "features." + f.Name, Value: fv})
 		}
+	}
+	if val.Kind == protoparser.ValueBlock || val.Kind == protoparser.ValueList {
+		x.validateOptionValue(val)
 	}
 
 	for _, o := range options {
 		if !verifyOption(o.Name, o.Value) {
-			x.Fatalf("%s - option %q unsupported value %q", getTokenPos(c), o.Name, o.Value)
+			x.Fatalf("%s - option %q unsupported value %q", val.Pos, o.Name, o.Value)
 		}
 		if o.Name == f_field_presence && !x.currentProto().IsEdition2023() {
-			x.Fatalf("%s - option %q is only available in editions", getTokenPos(c), o.Name)
+			x.Fatalf("%s - option %q is only available in editions", val.Pos, o.Name)
 		}
 	}
 	return options
 }
 
 func (x *protoLoader) rejectFieldPresenceOption(
-	c antlr.ParserRuleContext, options Options, target string,
+	pos protoparser.Pos, options Options, target string,
 ) {
 	for _, o := range options {
 		if o.Name == f_field_presence {
-			x.Fatalf("%s - option %q cannot be set on %s", getTokenPos(c), o.Name, target)
+			x.Fatalf("%s - option %q cannot be set on %s", pos, o.Name, target)
 		}
 	}
 }
 
-func (x *protoLoader) ExitOptionStatement(c *parser.OptionStatementContext) {
-	options := x.parseOptions(c.OptionName().GetText(), c.Constant())
-
-	switch getRuleIndex(c.GetParent()) {
-	case parser.ProtobufParserRULE_proto:
-		p := x.currentProto()
-		for _, o := range options {
-			if o.Name == f_field_presence && o.Value == "LEGACY_REQUIRED" {
-				x.Fatalf("%s - option %q cannot default to %q on a file",
-					getTokenPos(c), o.Name, o.Value)
-			}
+func (x *protoLoader) loadFileOption(p *Proto, decl *protoparser.OptionDecl) {
+	options := x.parseOptions(decl.Name, decl.Value)
+	for _, o := range options {
+		if o.Name == f_field_presence && o.Value == "LEGACY_REQUIRED" {
+			x.Fatalf("%s - option %q cannot default to %q on a file",
+				decl.Pos, o.Name, o.Value)
 		}
-		p.Options = append(p.Options, options...)
-
-	case parser.ProtobufParserRULE_messageElement:
-		x.rejectFieldPresenceOption(c, options, "a message")
-		m := x.currentMsg()
-		m.Options = append(m.Options, options...)
-
-	case parser.ProtobufParserRULE_oneof:
-		x.rejectFieldPresenceOption(c, options, "a oneof")
-		of := x.currentOneof()
-		of.Options = append(of.Options, options...)
-
-	case parser.ProtobufParserRULE_enumElement:
-		x.rejectFieldPresenceOption(c, options, "an enum")
-		x.enum.Options = append(x.enum.Options, options...)
-
-	case parser.ProtobufParserRULE_serviceElement:
-		x.rejectFieldPresenceOption(c, options, "a service")
-		s := x.currentService()
-		s.Options = append(s.Options, options...)
-
-	case parser.ProtobufParserRULE_rpc:
-		x.rejectFieldPresenceOption(c, options, "an RPC")
-		s := x.currentService()
-		rpc := last(s.Methods)
-		rpc.Options = append(rpc.Options, options...)
-
-	default:
-		return
 	}
+	p.Options = append(p.Options, options...)
+}
+
+func (x *protoLoader) loadScopedOption(decl *protoparser.OptionDecl, target string) Options {
+	options := x.parseOptions(decl.Name, decl.Value)
+	x.rejectFieldPresenceOption(decl.Pos, options, target)
+	return options
 }
 
 func verifyOption(name, v string) bool {

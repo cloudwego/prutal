@@ -21,9 +21,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/cloudwego/prutal/prutalgen/internal/parser"
 	"github.com/cloudwego/prutal/prutalgen/internal/protobuf/strs"
 	"github.com/cloudwego/prutal/prutalgen/internal/protobuf/text"
+	"github.com/cloudwego/prutal/prutalgen/internal/protoparser"
 )
 
 type Enum struct {
@@ -203,59 +203,50 @@ func (x *EnumField) genNoPrefix() bool {
 	return x.Enum.genNoPrefix()
 }
 
-func (x *protoLoader) EnterEnumDef(c *parser.EnumDefContext) {
-	// ENUM enumName enumBody
+func (x *protoLoader) loadEnum(p *Proto, parent *Message, decl *protoparser.EnumDecl) {
 	e := &Enum{
-		HeadComment: x.consumeHeadComment(c), InlineComment: x.consumeInlineComment(c),
-		Name: c.EnumName().GetText()}
-	e.Directives.Parse(e.HeadComment, e.InlineComment)
-	switch getRuleIndex(c.GetParent()) {
-	case parser.ProtobufParserRULE_topLevelDef: // top level message
-		p := x.currentProto()
-		p.Enums = append(p.Enums, e)
-		e.Proto = p
-	case parser.ProtobufParserRULE_messageElement: // embedded message
-		m := x.currentMsg()
-		m.Enums = append(m.Enums, e)
-		e.Msg = m
-		e.Proto = x.currentProto()
-	default:
-		panic("unknown parent rule")
+		HeadComment:   decl.HeadComment,
+		InlineComment: decl.InlineComment,
+		Name:          decl.Name,
+		Msg:           parent,
+		Proto:         p,
 	}
-	x.enum = e // for options, see ExitOptionStatement
+	e.Directives.Parse(e.HeadComment, e.InlineComment)
+	if parent == nil {
+		p.Enums = append(p.Enums, e)
+	} else {
+		parent.Enums = append(parent.Enums, e)
+	}
+	for _, opt := range decl.Options {
+		e.Options = append(e.Options, x.loadScopedOption(opt, "an enum")...)
+	}
+	for _, res := range decl.Reserved {
+		x.loadEnumReserved(e, res)
+	}
+	for _, ev := range decl.Values {
+		x.loadEnumValue(e, ev)
+	}
 }
 
-func (x *protoLoader) ExitEnumDef(c *parser.EnumDefContext) {
-	x.enum = nil
-}
-
-func (x *protoLoader) ExitEnumField(c *parser.EnumFieldContext) {
-	// ident EQ (MINUS)? intLit enumValueOptions? SEMI
+func (x *protoLoader) loadEnumValue(e *Enum, ev *protoparser.EnumValueDecl) {
 	f := &EnumField{
-		HeadComment: x.consumeHeadComment(c), InlineComment: x.consumeInlineComment(c),
-		Name: c.Ident().GetText()}
+		HeadComment:   ev.HeadComment,
+		InlineComment: ev.InlineComment,
+		Name:          ev.Name,
+		Enum:          e,
+	}
 	f.Directives.Parse(f.HeadComment, f.InlineComment)
 
-	//  (MINUS)? intLit
-	literal := c.IntLit().GetText()
-	if c.MINUS() != nil {
-		literal = "-" + literal
+	num, ok := text.UnmarshalI32(ev.Number)
+	if !ok {
+		x.Fatalf("%s - parse enum %q err", ev.NumberPos, ev.Number)
 	}
-	if num, ok := text.UnmarshalI32(literal); !ok {
-		t := c.IntLit()
-		x.Fatalf("%s - parse enum %q err", getTokenPos(t), literal)
-	} else {
-		f.Value = num
-	}
+	f.Value = num
 
-	// enumValueOptions
-	if oo := c.EnumValueOptions(); oo != nil {
-		for _, o := range oo.AllEnumValueOption() {
-			options := x.parseOptions(o.OptionName().GetText(), o.Constant())
-			x.rejectFieldPresenceOption(o, options, "an enum entry")
-			f.Options = append(f.Options, options...)
-		}
+	for _, o := range ev.Options {
+		options := x.parseOptions(o.Name, o.Value)
+		x.rejectFieldPresenceOption(o.Pos, options, "an enum entry")
+		f.Options = append(f.Options, options...)
 	}
-	f.Enum = x.enum
-	f.Enum.Fields = append(f.Enum.Fields, f)
+	e.Fields = append(e.Fields, f)
 }

@@ -11,7 +11,7 @@
 - Preserve the descriptor design: parse tags once, cache `StructDesc` by type, and resolve coder functions during finalization rather than on every encode or decode.
 - For every new unsafe layout assumption, document it, extend `internal/hack`, and consider both 64-bit and 32-bit behavior.
 - Validate the parsed model before generator emission and keep generated Go compact.
-- `internal/protowire`, `prutalgen/internal/antlr`, `prutalgen/internal/parser`, and `prutalgen/internal/protobuf` contain generated, ported, or vendored code.
+- `internal/protowire` and `prutalgen/internal/protobuf` contain generated, ported, or vendored code.
   Preserve their existing license headers and avoid unrelated reformatting or refactoring.
 - New first-party Go and assembly files need the Apache-2.0 header enforced by `.licenserc.yaml`.
 
@@ -19,7 +19,6 @@
 
 - Regenerate tracked `internal/prutal/testdata.pb.go` and `internal/prutal/testdata_edition2023.pb.go` with `internal/prutal/testdata.sh`.
   The script restores their required Apache-2.0 headers after generation.
-- Regenerate the ANTLR parser only for an intentional parser upgrade, using `prutalgen/internal/update_parser.sh` with a local `antlr` executable.
 
 ## Verification
 
@@ -46,6 +45,8 @@ Follow the Angular-style commit subject convention required by `CONTRIBUTING.md`
 
 - Repository: https://github.com/protocolbuffers/protobuf-go
 - Commit: `cdd4c5f7406e82462949c7a65defa9f3029c162d`
+- Parser & lexer reference: `protoc` `v29.3` (matching `tests/run.sh`)
 
-Use this revision to resolve protobuf semantics, wire-format edge cases, error behavior, and generated-code expectations.
-Change the pin only for a compatibility reason.
+Use the pinned `protobuf-go` revision to resolve protobuf semantics, wire-format edge cases, error behavior, and generated-code expectations.
+Use `protoc` `v29.3` to resolve `.proto` lexical and grammatical behavior.
+Change either pin only for a compatibility reason.

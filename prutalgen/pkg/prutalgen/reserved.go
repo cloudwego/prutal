@@ -23,8 +23,8 @@ import (
 	"strings"
 
 	"github.com/cloudwego/prutal/internal/protowire"
-	"github.com/cloudwego/prutal/prutalgen/internal/parser"
 	"github.com/cloudwego/prutal/prutalgen/internal/protobuf/text"
+	"github.com/cloudwego/prutal/prutalgen/internal/protoparser"
 )
 
 const (
@@ -64,105 +64,84 @@ func (rn reservedNames) Has(n string) bool {
 	return false
 }
 
-func (x *protoLoader) ExitReserved(c *parser.ReservedContext) {
-	rc := c.Ranges()
-	rn := c.ReservedFieldNames()
-	if rc == nil && rn == nil {
-		return
-	}
+func (x *protoLoader) loadMessageReserved(m *Message, decl *protoparser.ReservedDecl) {
+	ranges, names := x.loadReserved(decl, int32(protowire.MinValidNumber), int32(protowire.MaxValidNumber),
+		m.reserved, m.reservedNames)
+	m.reserved = append(m.reserved, ranges...)
+	m.reservedNames = append(m.reservedNames, names...)
+}
 
-	if rn != nil {
-		var existing reservedNames
-		switch getRuleIndex(c.GetParent()) {
-		case parser.ProtobufParserRULE_messageElement:
-			existing = x.currentMsg().reservedNames
-		case parser.ProtobufParserRULE_enumElement:
-			existing = x.enum.reservedNames
-		}
-		names := x.parseReservedNames(rn)
-		seen := make(map[string]bool, len(existing)+len(names))
-		for _, name := range existing {
+func (x *protoLoader) loadEnumReserved(e *Enum, decl *protoparser.ReservedDecl) {
+	ranges, names := x.loadReserved(decl, int32(math.MinInt32), int32(math.MaxInt32),
+		e.reserved, e.reservedNames)
+	e.reserved = append(e.reserved, ranges...)
+	e.reservedNames = append(e.reservedNames, names...)
+}
+
+func (x *protoLoader) loadReserved(
+	decl *protoparser.ReservedDecl,
+	minValue, maxValue int32,
+	existingRanges reservedRanges,
+	existingNames reservedNames,
+) (reservedRanges, reservedNames) {
+	if len(decl.Names) > 0 {
+		names := x.parseReservedNames(decl)
+		seen := make(map[string]bool, len(existingNames)+len(names))
+		for _, name := range existingNames {
 			seen[name] = true
 		}
-		for _, name := range names {
+		for i, name := range names {
 			if seen[name] {
-				x.Fatalf("%s - reserved name %q is duplicated", getTokenPos(rn), name)
+				x.Fatalf("%s - reserved name %q is duplicated", decl.Names[i].Pos, name)
 			}
 			seen[name] = true
 		}
-		switch getRuleIndex(c.GetParent()) {
-		case parser.ProtobufParserRULE_messageElement:
-			m := x.currentMsg()
-			m.reservedNames = append(m.reservedNames, names...)
-
-		case parser.ProtobufParserRULE_enumElement:
-			e := x.enum
-			e.reservedNames = append(e.reservedNames, names...)
-		}
-		return
+		return nil, names
 	}
-
-	parentRule := getRuleIndex(c.GetParent())
-	minValue, maxValue := int32(math.MinInt32), int32(math.MaxInt32)
-	var existing reservedRanges
-	if parentRule == parser.ProtobufParserRULE_messageElement {
-		minValue = int32(protowire.MinValidNumber)
-		maxValue = int32(protowire.MaxValidNumber)
-		existing = x.currentMsg().reserved
-	} else {
-		existing = x.enum.reserved
+	if len(decl.Ranges) > 0 {
+		return x.parseRanges(decl.Ranges, minValue, maxValue, existingRanges, "reserved range", true), nil
 	}
-
-	ranges := x.parseRanges(rc, minValue, maxValue, existing, "reserved range", true)
-
-	switch parentRule {
-	case parser.ProtobufParserRULE_messageElement:
-		m := x.currentMsg()
-		m.reserved = append(m.reserved, ranges...)
-
-	case parser.ProtobufParserRULE_enumElement:
-		e := x.enum
-		e.reserved = append(e.reserved, ranges...)
-	}
+	return nil, nil
 }
 
-func (x *protoLoader) ExitExtensions(c *parser.ExtensionsContext) {
+func (x *protoLoader) loadExtensions(m *Message, decl *protoparser.ExtensionsDecl) {
 	if x.currentProto().IsProto3() {
-		x.Fatalf("%s - extension ranges are not allowed in proto3", getTokenPos(c))
+		x.Fatalf("%s - extension ranges are not allowed in proto3", decl.Pos)
 	}
-	options := x.parseFieldOptions(c.FieldOptions())
-	x.rejectFieldPresenceOption(c, options, "an extension range")
-	m := x.currentMsg()
-	ranges := x.parseRanges(c.Ranges(), int32(protowire.MinValidNumber), int32(protowire.MaxValidNumber),
+	options := x.parseFieldOptions(decl.Options)
+	x.rejectFieldPresenceOption(decl.Pos, options, "an extension range")
+	ranges := x.parseRanges(decl.Ranges, int32(protowire.MinValidNumber), int32(protowire.MaxValidNumber),
 		m.extensionRanges, "extension range", false)
 	m.extensionRanges = append(m.extensionRanges, ranges...)
 }
 
-func (x *protoLoader) parseReservedNames(c parser.IReservedFieldNamesContext) reservedNames {
+func (x *protoLoader) parseReservedNames(decl *protoparser.ReservedDecl) reservedNames {
 	if x.currentProto().IsEdition2023() {
-		if len(c.AllStrLit()) > 0 {
-			x.Fatalf("%s - reserved names must be identifiers in editions", getTokenPos(c))
+		for _, rn := range decl.Names {
+			if rn.StringLit != nil {
+				x.Fatalf("%s - reserved names must be identifiers in editions", rn.Pos)
+			}
 		}
-		identifiers := c.AllReservedIdentifier()
-		names := make(reservedNames, 0, len(identifiers))
-		for _, ident := range identifiers {
-			names = append(names, ident.GetText())
+		names := make(reservedNames, 0, len(decl.Names))
+		for _, rn := range decl.Names {
+			names = append(names, rn.Ident)
 		}
 		return names
 	}
-	if len(c.AllReservedIdentifier()) > 0 {
-		x.Fatalf("%s - reserved names must be string literals before editions", getTokenPos(c))
+	for _, rn := range decl.Names {
+		if rn.StringLit == nil {
+			x.Fatalf("%s - reserved names must be string literals before editions", rn.Pos)
+		}
 	}
-	names := make(reservedNames, 0, len(c.AllStrLit()))
-	for _, s := range c.AllStrLit() {
+	names := make(reservedNames, 0, len(decl.Names))
+	for _, rn := range decl.Names {
 		var value strings.Builder
-		value.Grow(len(s.GetText()))
-		for _, lit := range s.AllSTR_LIT_SINGLE() {
-			part, err := unmarshalProtoSourceString(lit.GetText())
+		for _, part := range rn.StringLit.Parts {
+			s, err := unmarshalProtoSourceString(part)
 			if err != nil {
-				x.Fatalf("%s - reserved name syntax err: %s", getTokenPos(s), err)
+				x.Fatalf("%s - reserved name syntax err: %s", rn.Pos, err)
 			}
-			value.WriteString(part)
+			value.WriteString(s)
 		}
 		names = append(names, value.String())
 	}
@@ -281,45 +260,45 @@ func isHexDigit(c byte) bool {
 	return c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F'
 }
 
-func (x *protoLoader) parseRanges(c parser.IRangesContext, minValue, maxValue int32, existing reservedRanges,
-	kind string, allowNegative bool,
+func (x *protoLoader) parseRanges(
+	rr []*protoparser.RangeDecl,
+	minValue, maxValue int32,
+	existing reservedRanges,
+	kind string,
+	allowNegative bool,
 ) reservedRanges {
-	rr := c.AllOneRange()
 	ranges := make([]reservedRange, 0, len(rr))
 	for _, r := range rr {
-		if !allowNegative && len(r.AllMINUS()) > 0 {
-			x.Fatalf("%s - %s must not use negative numbers", getTokenPos(r), kind)
+		if !allowNegative && (strings.HasPrefix(r.Start, "-") || strings.HasPrefix(r.End, "-")) {
+			x.Fatalf("%s - %s must not use negative numbers", r.Pos, kind)
 		}
-		if to := r.TO(); to != nil && r.IntLit(0).GetStop().GetStop()+1 == to.GetSymbol().GetStart() {
-			x.Fatalf("%s - space is required between a number and %q", getTokenPos(r), to.GetText())
-		}
-		from, err := parseRangeInt(r, 0)
-		if err != nil {
-			x.Fatalf("%s", err)
+		from, ok := text.UnmarshalI32(r.Start)
+		if !ok {
+			x.Fatalf("%s - invalid integer %q", r.StartPos, r.Start)
 		}
 		v := reservedRange{from: from}
-		if r.TO() == nil {
+		if !r.IsRange {
 			v.to = v.from
-		} else if r.MAX() != nil {
+		} else if r.IsMax {
 			v.to = maxValue
 		} else {
-			to, err := parseRangeInt(r, 1)
-			if err != nil {
-				x.Fatalf("%s", err)
+			to, ok := text.UnmarshalI32(r.End)
+			if !ok {
+				x.Fatalf("%s - invalid integer %q", r.EndPos, r.End)
 			}
 			v.to = to
 		}
 		if v.from < minValue || v.from > maxValue || v.to < minValue || v.to > maxValue {
 			x.Fatalf("%s - %s [%d, %d] is outside [%d, %d]",
-				getTokenPos(r), kind, v.from, v.to, minValue, maxValue)
+				r.Pos, kind, v.from, v.to, minValue, maxValue)
 		}
 		if v.to < v.from {
-			x.Fatalf("%s - %s end %d is less than start %d", getTokenPos(r), kind, v.to, v.from)
+			x.Fatalf("%s - %s end %d is less than start %d", r.Pos, kind, v.to, v.from)
 		}
 		checkOverlap := func(previous reservedRange) {
 			if v.overlaps(previous) {
 				x.Fatalf("%s - %s [%d, %d] overlaps [%d, %d]",
-					getTokenPos(r), kind, v.from, v.to, previous.from, previous.to)
+					r.Pos, kind, v.from, v.to, previous.from, previous.to)
 			}
 		}
 		for _, previous := range existing {
@@ -331,25 +310,4 @@ func (x *protoLoader) parseRanges(c parser.IRangesContext, minValue, maxValue in
 		ranges = append(ranges, v)
 	}
 	return ranges
-}
-
-func parseRangeInt(r parser.IOneRangeContext, index int) (int32, error) {
-	lit := r.IntLit(index)
-	value := lit.GetText()
-	lowerToken := -1
-	if index > 0 {
-		lowerToken = r.IntLit(index - 1).GetStop().GetTokenIndex()
-	}
-	for _, minus := range r.AllMINUS() {
-		token := minus.GetSymbol().GetTokenIndex()
-		if token > lowerToken && token < lit.GetStart().GetTokenIndex() {
-			value = "-" + value
-			break
-		}
-	}
-	v, ok := text.UnmarshalI32(value)
-	if !ok {
-		return 0, fmt.Errorf("%s - invalid integer %q", getTokenPos(lit), value)
-	}
-	return v, nil
 }

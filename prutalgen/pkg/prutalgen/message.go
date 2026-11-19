@@ -22,8 +22,8 @@ import (
 	"strings"
 
 	"github.com/cloudwego/prutal/internal/protowire"
-	"github.com/cloudwego/prutal/prutalgen/internal/parser"
 	"github.com/cloudwego/prutal/prutalgen/internal/protobuf/strs"
+	"github.com/cloudwego/prutal/prutalgen/internal/protoparser"
 )
 
 type Message struct {
@@ -250,30 +250,41 @@ func (m *Message) verify() error {
 	return errors.Join(errs...)
 }
 
-func (x *protoLoader) EnterMessageDef(c *parser.MessageDefContext) {
-	m := &Message{}
-	m.HeadComment = x.consumeHeadComment(c)
-	m.InlineComment = x.consumeInlineComment(c)
-	m.Directives.Parse(m.HeadComment, m.InlineComment)
-
-	m.Name = c.MessageName().GetText()
-	switch getRuleIndex(c.GetParent()) {
-	case parser.ProtobufParserRULE_topLevelDef: // top level message
-		p := x.currentProto()
-		p.Messages = append(p.Messages, m)
-		m.Proto = p
-
-	case parser.ProtobufParserRULE_messageElement: // embedded message
-		m0 := x.currentMsg()
-		m0.Messages = append(m0.Messages, m)
-		m.Msg = m0
-		m.Proto = x.currentProto()
-	default:
-		panic("unknown parent rule")
+func (x *protoLoader) loadMessage(p *Proto, parent *Message, decl *protoparser.MessageDecl) {
+	m := &Message{
+		HeadComment:   decl.HeadComment,
+		InlineComment: decl.InlineComment,
+		Name:          decl.Name,
+		Msg:           parent,
+		Proto:         p,
 	}
-	push(&x.msgstack, m)
-}
+	m.Directives.Parse(m.HeadComment, m.InlineComment)
+	if parent == nil {
+		p.Messages = append(p.Messages, m)
+	} else {
+		parent.Messages = append(parent.Messages, m)
+	}
 
-func (x *protoLoader) ExitMessageDef(c *parser.MessageDefContext) {
-	pop(&x.msgstack)
+	for _, el := range decl.Elements {
+		switch d := el.(type) {
+		case *protoparser.MessageDecl:
+			x.loadMessage(p, m, d)
+		case *protoparser.EnumDecl:
+			x.loadEnum(p, m, d)
+		case *protoparser.OneofDecl:
+			x.loadOneof(m, d)
+		case *protoparser.OptionDecl:
+			m.Options = append(m.Options, x.loadScopedOption(d, "a message")...)
+		case *protoparser.ReservedDecl:
+			x.loadMessageReserved(m, d)
+		case *protoparser.ExtensionsDecl:
+			x.loadExtensions(m, d)
+		case *protoparser.ExtendDecl:
+			x.loadExtend(d)
+		case *protoparser.MapFieldDecl:
+			x.loadMapField(m, d)
+		case *protoparser.FieldDecl:
+			x.loadField(m, d)
+		}
+	}
 }

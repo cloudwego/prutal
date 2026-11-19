@@ -17,13 +17,12 @@
 package prutalgen
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
-
-	"github.com/cloudwego/prutal/prutalgen/internal/antlr"
+	"strings"
 
 	"github.com/cloudwego/prutal/prutalgen/internal/protobuf/text"
+	"github.com/cloudwego/prutal/prutalgen/internal/protoparser"
 )
 
 func push[T any](vv *[]T, v T) {
@@ -39,30 +38,26 @@ func last[T any](vv []T) T {
 	return vv[len(vv)-1]
 }
 
-func unmarshalConst(s string) (string, error) {
-	if len(s) > 0 && (s[0] == '\'' || s[0] == '"') {
-		return text.UnmarshalString(s)
+func unmarshalStringParts(parts []string) (string, error) {
+	if len(parts) == 1 {
+		return text.UnmarshalString(parts[0])
 	}
-	return s, nil
+	var b strings.Builder
+	for _, part := range parts {
+		s, err := text.UnmarshalString(part)
+		if err != nil {
+			return "", err
+		}
+		b.WriteString(s)
+	}
+	return b.String(), nil
 }
 
-func getText(n antlr.TerminalNode) string {
-	if n == nil {
-		return ""
+func unmarshalValue(v *protoparser.Value) (string, error) {
+	if v.Kind == protoparser.ValueString {
+		return unmarshalStringParts(v.StringParts)
 	}
-	return n.GetText()
-}
-
-func getRuleIndex(v antlr.Tree) int {
-	type RuleContext interface {
-		GetRuleIndex() int
-	}
-	return v.(RuleContext).GetRuleIndex()
-}
-
-func getTokenPos(v antlr.ParserRuleContext) string {
-	t := v.GetStart()
-	return fmt.Sprintf("line %d column %d", t.GetLine(), t.GetColumn())
+	return v.Raw, nil
 }
 
 func isfalse(v string) bool { return v == "false" }
